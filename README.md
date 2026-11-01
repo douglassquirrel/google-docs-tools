@@ -225,6 +225,8 @@ still to come.
 - 1 November 2026: first version: `google-sign-in`, `read-doc`, `comment-doc`, copied from
   `online-publishing-tools` and made general. The sign-in asks for Google Docs and Google Drive
   only, not mail.
+- 1 November 2026: running a command no longer writes `__pycache__` into the checkout, on any
+  Python, so setting `PYTHONDONTWRITEBYTECODE` is no longer needed.
 
 ## Contributing
 

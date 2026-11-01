@@ -3,6 +3,7 @@
 import os
 import sys
 
+sys.dont_write_bytecode = True  # a run leaves the checkout as it found it
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from googledocstools.comment_doc import main  # noqa: E402
 
