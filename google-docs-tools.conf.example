@@ -1,0 +1,5 @@
+# Copy to ~/.google-docs-tools.conf and edit. Every setting can also be given as a flag on the command
+# line, which wins over this file. This file is read, never run: KEY=value lines, # comments,
+# optional quotes, and a leading ~ in a path means your home folder. Only what belongs to this
+# machine goes here; nothing secret.
+#SETTING=~/somewhere
