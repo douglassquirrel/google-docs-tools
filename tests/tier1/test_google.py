@@ -286,7 +286,7 @@ def test_comments_reads_every_page_a_hundred_at_a_time_naming_the_fields(fake):
     fields = asked[0]["query"]["fields"][0]
     for wanted in ("nextPageToken", "id", "author(displayName)", "content", "createdTime",
                    "resolved", "deleted", "quotedFileContent(value)", "assigneeEmailAddress",
-                   "mentionedEmailAddresses", "replies("):
+                   "mentionedEmailAddresses", "replies(id,"):
         assert wanted in fields
 
 

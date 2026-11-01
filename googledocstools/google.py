@@ -219,7 +219,7 @@ class Google:
             "pageSize": 100,
             "fields": "nextPageToken,comments(id,author(displayName),content,createdTime,"
                       "resolved,deleted,quotedFileContent(value),assigneeEmailAddress,"
-                      "mentionedEmailAddresses,replies(author(displayName),content,"
+                      "mentionedEmailAddresses,replies(id,author(displayName),content,"
                       "createdTime,deleted,action))",
         }
         found = []

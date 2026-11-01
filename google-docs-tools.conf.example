@@ -8,3 +8,12 @@
 # with commas between. Google emails whoever a comment names, so keep this to the people working
 # on the documents. The addresses below are invented.
 #COMMENT_RECIPIENTS=someone@example.org, someone.else@example.net
+
+# watch-doc: what a note and a placeholder in a document start and end with, taken literally (put a
+# marker that needs it in quotes), and whether text in doubled note markers, such as a merge tag, is
+# left out of the notes (yes or no). The values below are the defaults.
+#NOTE_OPEN=[
+#NOTE_CLOSE=]
+#PLACEHOLDER_OPEN={
+#PLACEHOLDER_CLOSE=}
+#SKIP_DOUBLED=yes

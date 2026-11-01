@@ -28,23 +28,30 @@ def _when(given):
     return "%s %s UTC" % match.groups()
 
 
-def _by(item):
+def by(item):
+    """Who wrote a comment or a reply, and when."""
     name = (item.get("author") or {}).get("displayName") or "someone unnamed"
     return "%s, %s" % (name, _when(item.get("createdTime")))
+
+
+def words_on(comment):
+    """The words a comment is about, as Google gives them or as its text starts; "" if neither."""
+    quoted = (comment.get("quotedFileContent") or {}).get("value")
+    if quoted:
+        return quoted
+    on = _ON.match(comment.get("content") or "")
+    return on.group(1) if on else ""
 
 
 def _block(comment):
     lines = ["== Comment %s: %s ==" % (comment.get("id"),
                                          "resolved" if comment.get("resolved") else "open"),
-             "By " + _by(comment)]
+             "By " + by(comment)]
     if comment.get("assigneeEmailAddress"):
         lines.append("Assigned to " + comment["assigneeEmailAddress"])
     if comment.get("mentionedEmailAddresses"):
         lines.append("Mentions: " + ", ".join(comment["mentionedEmailAddresses"]))
-    quoted = (comment.get("quotedFileContent") or {}).get("value")
-    if not quoted:
-        on = _ON.match(comment.get("content") or "")
-        quoted = on and on.group(1)
+    quoted = words_on(comment)
     if quoted:
         lines.append('On: "%s"' % quoted)
     if comment.get("content"):
@@ -57,7 +64,7 @@ def _block(comment):
         if action:
             said.append(action)
         first, *rest = " ".join(part for part in said if part).split("\n")
-        lines.append("  Reply by %s: %s" % (_by(reply), first))
+        lines.append("  Reply by %s: %s" % (by(reply), first))
         lines += ["    " + line for line in rest]
     return lines
 
@@ -66,10 +73,15 @@ def _count(number, word):
     return "%d %s%s" % (number, word, "" if number == 1 else "s")
 
 
+def alive(found):
+    """The comments Google gave, or the replies, without the deleted ones, oldest first."""
+    return sorted((item for item in found if not item.get("deleted")),
+                  key=lambda item: item.get("createdTime") or "")
+
+
 def listing(found, open_only):
     """The lines --list prints for the comments Google gave, oldest first."""
-    kept = sorted((c for c in found if not c.get("deleted")),
-                  key=lambda c: c.get("createdTime") or "")
+    kept = alive(found)
     if not kept:
         return ["No comments."]
     shut = [c for c in kept if c.get("resolved")]

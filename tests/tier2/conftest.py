@@ -1,5 +1,7 @@
 """Running the commands' main() against the stand-in. From online-publishing-tools' tier 2
 conftest (1 November 2026), for a document given by its id."""
+from datetime import datetime, timezone
+
 import pytest
 
 from tests.conftest import (
@@ -190,4 +192,42 @@ def read(fake, env, capsys):
         fake.files[DOC_ID]["described"] = paragraphs
 
     run.document = document
+    return run
+
+
+@pytest.fixture
+def watch(fake, env, tmp_path, capsys):
+    """Run watch-doc against a document, with a snapshot of its own and the clock fixed."""
+    from googledocstools import watch_doc
+
+    fake.add_described(DOC_ID, DOC_NAME, ["root"], ["# unused"])
+    file = tmp_path / "a look.snapshot"
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / ".google-docs-tools.conf"
+
+    def run(*argv, defaults=True, environment=None):
+        args = list(argv)
+        if defaults:
+            args = [DOC_ID, "--snapshot", str(file)] + args
+        code = watch_doc.main(
+            args, env=env if environment is None else environment, send=fake,
+            default_settings=str(settings),
+            clock=lambda: datetime(2026, 11, 1, 19, 40, tzinfo=timezone.utc))
+        captured = capsys.readouterr()
+        for secret in SECRETS:
+            assert secret not in captured.out and secret not in captured.err
+        assert "Traceback" not in captured.err
+        return Result(code, captured.out, captured.err)
+
+    def document(paragraphs):
+        fake.files[DOC_ID]["described"] = paragraphs
+
+    def comments(found):
+        fake.files[DOC_ID]["comments"] = found
+
+    run.document = document
+    run.comments = comments
+    run.file = file
+    run.settings = settings
     return run

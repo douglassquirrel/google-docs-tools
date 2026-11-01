@@ -1,7 +1,7 @@
 # google-docs-tools
 
 Small command-line programs for working on a Google Doc with an AI assistant: read the document
-as text, and put comments in it or list them. For Squirrel's book projects (`wrangling-ai`,
+as text, put comments in it or list them, and look at what has changed since the last look. For Squirrel's book projects (`wrangling-ai`,
 `beyond-ai`), whose drafts live in Google Docs, and for any other project that needs the same.
 Each command takes the document by its id or address, keeps everything particular to one project
 in a settings file or on the command line, and never changes the document's text: the one call
@@ -13,6 +13,7 @@ that changes anything at Google is adding a comment. The Google layer came from
 |---|---|
 | `read-doc` | Print a Google Doc as text: headings with `#`, **bold**, *italic*, links, list items, a `---` for a rule. Reads only. |
 | `comment-doc` | Add a comment on some of the document's words, addressed to a named person if wanted; or list the document's comments. |
+| `watch-doc` | One quiet look at a document and its comments: only what changed since the last look. Reads only, and writes its own snapshot file. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
 ## Requirements
@@ -94,7 +95,23 @@ prints the document's name, a blank line, and the document as text. Then
 
 checks that the words are in the document exactly once and says what it would add, adding nothing;
 without `--dry-run` it adds the comment and prints its id and the document's address with the
-comment selected. `./comment-doc DOCUMENT-ID --list` prints the comments, oldest first.
+comment selected. `./comment-doc DOCUMENT-ID --list` prints the comments, oldest first. For a
+session that looks at a document every few minutes,
+
+```bash
+./watch-doc DOCUMENT-ID --snapshot ~/looks/my-book.snapshot
+```
+
+makes a snapshot on its first run, and after that prints only what changed since the last one:
+
+    2026-11-01 19:40 UTC: 2 paragraphs changed, 1 new note, 1 new comment
+    == Changed ==
+    changed, under "## Chapter one": …in the early {-spring-}{+autumn+}
+    added, under "## Chapter one": A new paragraph here.
+    == New notes ==
+    [check this date]  in: …signed in 1998 [check this date] by both sides…
+    == Comments ==
+    new comment by Ann Example, 2026-11-01 19:38 UTC on "the words": Is this right?
 
 ## Usage
 
@@ -148,6 +165,50 @@ Google emails whoever a comment names, so the text may hold no address but the o
 them out of it. A comment is added once: if Google cannot be reached while it is being added, the
 command says to `--list` before trying again.
 
+### `watch-doc`: what is new since the last look
+
+    watch-doc DOC --snapshot FILE [--dry-run] [--settings FILE] [--note-open TEXT] [--note-close TEXT]
+              [--placeholder-open TEXT] [--placeholder-close TEXT] [--skip-doubled yes|no] [--timeout SECONDS]
+
+The first line is always one summary line, with the time of the look: `2026-11-01 19:45 UTC: nothing
+new`, or a count of each kind of thing that is new. Every call to Google is a read. Scheduling the
+looks is up to whoever runs it.
+
+With no file at `--snapshot` it makes one, and prints the notes, each with a few words around it,
+then how many placeholders there are and how many comments are open:
+
+    2026-11-01 19:40 UTC: no snapshot yet, so one was made
+    == Notes: 1 ==
+    [check this date]  in: …signed in 1998 [check this date] by both sides…
+    Placeholders: 3
+    Open comments: 2
+
+With a snapshot it compares and prints only what changed, in these parts, each left out when empty:
+
+- `== Changed ==`: a line for each paragraph changed, added or removed, starting with where it is:
+  under the nearest heading above it, or after the paragraph before it if there is no heading, or
+  at the start. A changed paragraph is shown word by word, `{-old-}{+new+}`, with three words of
+  what is the same on each side; one added or removed is shown whole. The text is compared as
+  `read-doc` prints it with no flags, so bold, italic, a link, a heading's level and a list mark
+  count as changes.
+- `== New notes ==` and `== Notes gone ==`: the note, and the words around it.
+- `== Comments ==`: each new comment and reply (who, when, what it is on if known, its text), and
+  each comment resolved or reopened.
+
+| Flag | Meaning |
+|---|---|
+| `--snapshot FILE` | The snapshot of the last look, written over with this one. Made if it is not there. Only ever written over if it is this command's snapshot of this document. |
+| `--dry-run` | Do the look and print it, but save no snapshot. |
+| `--note-open TEXT`, `--note-close TEXT` | What a note in the document starts and ends with. Default `[` and `]`. Taken literally; may be longer than one character. |
+| `--placeholder-open TEXT`, `--placeholder-close TEXT` | The same for a placeholder. Default `{` and `}`. |
+| `--skip-doubled yes\|no` | Whether text in doubled note markers, such as a merge tag `[[contact.first_name]]`, is left out of the notes. Default yes. |
+| `--settings FILE` | The settings file. Without it, `~/.google-docs-tools.conf` if it exists. |
+| `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
+The snapshot holds the document's text, so it is written readable by its owner alone. It is written
+beside FILE and moved into place after the look is printed, so a failure leaves the old one, and is
+saved on every run that gets that far, whether or not anything was new.
+
 ### `google-sign-in`: the one-time sign-in
 
     google-sign-in --account EMAIL --env-file FILE [--port N] [--timeout SECONDS] [--dry-run]
@@ -162,11 +223,14 @@ file and contacts nothing.
 
 `~/.google-docs-tools.conf`, or the file given with `--settings`: `KEY=value` lines and `#`
 comments, read and never run; nothing secret goes in it. `google-docs-tools.conf.example` is the
-model. The one setting so far:
+model. A flag, where there is one, wins over the file.
 
 | Setting | Used by | Meaning |
 |---|---|---|
 | `COMMENT_RECIPIENTS` | `comment-doc` | The only addresses a comment may be addressed to or name, with commas between. |
+| `NOTE_OPEN`, `NOTE_CLOSE` | `watch-doc` | What a note starts and ends with. Default `[` and `]`. |
+| `PLACEHOLDER_OPEN`, `PLACEHOLDER_CLOSE` | `watch-doc` | What a placeholder starts and ends with. Default `{` and `}`. |
+| `SKIP_DOUBLED` | `watch-doc` | `yes` or `no`: whether text in doubled note markers is left out of the notes. Default `yes`. |
 
 ### The secrets
 
@@ -179,11 +243,11 @@ same command as the tool. A missing one stops the command with exit 3 and the li
 
 | Code | Meaning |
 |---|---|
-| 0 | Done (or, with `--dry-run`, checked). |
-| 2 | Bad arguments or settings: a `DOC` that is not an id or an address, flags that do not go together, an address not in `COMMENT_RECIPIENTS`, an unreadable `--settings` file. |
+| 0 | Done (or, with `--dry-run`, checked). For `watch-doc`, the look worked, whether or not anything is new: the summary line says which. |
+| 2 | Bad arguments or settings: a `DOC` that is not an id or an address, flags that do not go together, an address not in `COMMENT_RECIPIENTS`, an unreadable `--settings` file, an empty marker. For `watch-doc`, also a `--snapshot` file that is not its snapshot of this document, or no folder to make it in; the file is left as it was. |
 | 3 | Cannot sign in to Google: a secret is not set or empty, or Google refused the stored token (run `google-sign-in` again). |
 | 4 | Google could not be reached, or answered with an error; the message names the step and Google's own words. |
-| 5 | The document is not as it must be: no document with that id that this account can see, in the bin, not a Google Doc; or the words of `--on` are not in it exactly once. |
+| 5 | The document is not as it must be: no document with that id that this account can see, in the bin, not a Google Doc; or the words of `--on` are not in it exactly once. For `watch-doc`, also a snapshot that could not be written: the look was printed, the old snapshot stands, and the next look reports the same again. |
 
 Every message says what happened and what to do, on standard error, with the command's name
 first; there is never a traceback. When a comment was being added as Google went out of reach, the
@@ -201,16 +265,17 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 376 tests; coverage of `googledocstools/` 99% (the five statements not run build the
+invented. 513 tests; coverage of `googledocstools/` 99% (the five statements not run build the
 picture-and-caption requests that no command here makes yet). `tests/tier1/` are pure functions,
 `tests/tier2/` the commands against the stand-in.
 
 **Checks to make by hand against Google**, read-only but for one comment: `read-doc` on a real
 document you have shared with the account, with `--title`; `comment-doc --list` on it; `comment-doc
---add … --dry-run` on words in it; then one real `--add` and `--list` again to see it. None of
-these has been run yet as of 1 November 2026: the tools came from `online-publishing-tools`, where
-the same code ran against Google from 11 October 2026, but this repository's own first real run is
-still to come.
+--add … --dry-run` on words in it; then one real `--add` and `--list` again to see it; `read-doc` on
+a document with a nested bullet list and a numbered list; `watch-doc` twice on a document, editing
+it between the two. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
+in, reading, comments, the snapshot); a real `--add`, and real lists, are still to come.
 
 ## Known limitations
 
@@ -218,6 +283,9 @@ still to come.
   marked), and not pictures (a paragraph that is only a picture is left out).
 - A numbered list is written in figures whatever the document shows: an item shown as `b.` or
   `ii.` comes out as `2. `. A numbered heading has its number first (`1. ## Heading`).
+- `watch-doc` does not see a highlight, an underline, a font or a picture changing, a comment
+  edited or a comment deleted. It does not retry; if Google fails, run it again. It keeps no history:
+  each look is compared with the one before.
 - A comment goes on words that are in the document exactly once, within one paragraph; Google
   shows it under All comments rather than anchored on the words.
 - Nothing here changes a document's text. Filling in text, inserting pictures or making links,
@@ -233,6 +301,7 @@ still to come.
 - 1 November 2026: `read-doc` now marks list items (`- `, or `1. ` for a numbered list, two more
   spaces for each level). They came out as plain paragraphs before, so the text of a document with
   lists has changed.
+- 1 November 2026: new command, `watch-doc`.
 
 ## Contributing
 
