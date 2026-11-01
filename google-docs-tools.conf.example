@@ -3,3 +3,8 @@
 # optional quotes, and a leading ~ in a path means your home folder. Only what belongs to this
 # machine goes here; nothing secret.
 #SETTING=~/somewhere
+
+# comment-doc: the only addresses a comment may be addressed to with --to, or name in its text,
+# with commas between. Google emails whoever a comment names, so keep this to the people working
+# on the documents. The addresses below are invented.
+#COMMENT_RECIPIENTS=someone@example.org, someone.else@example.net
