@@ -19,7 +19,7 @@ def _block(paragraph, highlights):
     if paragraph.kind == "UNWRITTEN":
         return "<!-- not written: %s -->" % paragraph.spans[0].text
     text = render(paragraph.spans, highlights).strip()
-    return _hashes(paragraph.kind) + text if text else None
+    return paragraph.mark + _hashes(paragraph.kind) + text if text else None
 
 
 def as_text(paragraphs, highlights=False):

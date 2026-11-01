@@ -3,7 +3,7 @@ from collections import namedtuple
 
 from googledocstools.markup import Span
 
-Paragraph = namedtuple("Paragraph", "kind spans pictures links", defaults=((), ()))
+Paragraph = namedtuple("Paragraph", "kind spans pictures links mark", defaults=((), (), ""))
 
 
 def units(text):
@@ -155,8 +155,40 @@ def _spans(elements):
     return spans
 
 
+ORDERED = ("DECIMAL", "ZERO_DECIMAL", "UPPER_ALPHA", "ALPHA", "UPPER_ROMAN", "ROMAN")
+
+
+def _marker(described):
+    """A function giving what goes before each list item in turn, from its paragraph's bullet
+    ("" for no bullet): two spaces per level, then a dash, or the item's number in figures.
+
+    A list's numbers go on across whatever stands between its items, as Google counts them, and
+    an item starts the levels under it again. A list or level the document does not describe is
+    taken for bullets.
+    """
+    counted = {}  # (the list's id, its level) -> the last number given
+
+    def mark(bullet):
+        if bullet is None:
+            return ""
+        list_id, level = bullet.get("listId"), bullet.get("nestingLevel", 0)
+        for key in [key for key in counted if key[0] == list_id and key[1] > level]:
+            del counted[key]
+        levels = described.get("lists", {}).get(list_id, {}).get("listProperties", {}).get(
+            "nestingLevels", [])
+        glyph = levels[level] if level < len(levels) else {}
+        if glyph.get("glyphType") not in ORDERED:
+            return "  " * level + "- "
+        first = glyph.get("startNumber") or 1
+        counted[list_id, level] = counted.get((list_id, level), first - 1) + 1
+        return "%s%d. " % ("  " * level, counted[list_id, level])
+
+    return mark
+
+
 def paragraphs(described):
-    """The paragraphs of a document's body, in order, each with its kind, pieces and pictures.
+    """The paragraphs of a document's body, in order, each with its kind, pieces and pictures,
+    and a list item with its mark.
 
     A horizontal rule is a paragraph of its own kind, RULE, with no text. Google may hold a rule
     and text in one paragraph; that is read as the rule and then the text, so no text is lost.
@@ -164,6 +196,7 @@ def paragraphs(described):
     own paragraph, its one piece saying what it is, so it is never left out silently.
     """
     found = []
+    marked = _marker(described)
 
     def walk(content):
         for structural in content:
@@ -175,6 +208,7 @@ def paragraphs(described):
                 continue
             elements = structural["paragraph"]["elements"]
             kind = structural["paragraph"].get("paragraphStyle", {}).get("namedStyleType")
+            mark = marked(structural["paragraph"].get("bullet"))
             stretches = [[]]  # what lies between the rules: the text of one paragraph each
             for element in elements:
                 if "horizontalRule" in element:
@@ -187,7 +221,8 @@ def paragraphs(described):
                 spans, pictures = _spans(stretch), _sources(described, stretch)
                 if spans or pictures or len(stretches) == 1:
                     found.append(Paragraph(kind or "NORMAL_TEXT", spans, pictures,
-                                           _links(stretch)))
+                                           _links(stretch), mark))
+                    mark = ""
             for element in elements:
                 for key, what in UNWRITABLE.items():
                     if key in element:

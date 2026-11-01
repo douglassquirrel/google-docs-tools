@@ -57,7 +57,7 @@ def w_paragraphs(*texts):
 
 def _spec_text(spec):
     """The text of a paragraph given for described(), worked out here on its own terms."""
-    if isinstance(spec, (Styled, RuleThen)):
+    if isinstance(spec, (Styled, RuleThen, Listed)):
         spec = spec.runs
     if spec is RULE:
         return ""
@@ -560,6 +560,20 @@ class Styled:
         self.kind, self.runs, self.alignment = kind, runs, alignment
 
 
+class Listed:
+    """A list item for described(): Listed("An item", "list-1", level=1), numbered=True for a
+    level that counts, start=N for one that does not count from 1.
+
+    Believed from Google's page for the Docs API, not yet seen: the paragraph has a bullet with
+    the list's id and its level, left out at level 0; the document's lists say, level by level,
+    a glyphSymbol for a bullet or a glyphType for a number. Google's lists have nine levels.
+    """
+
+    def __init__(self, runs, list_id="list-1", level=0, numbered=False, start=None):
+        self.runs, self.list_id, self.level = runs, list_id, level
+        self.numbered, self.start = numbered, start
+
+
 RULE = object()  # a horizontal rule, as a paragraph for described()
 
 
@@ -583,8 +597,20 @@ def described(paragraphs, revision="revision-1"):
     index = 1
     content = [{"endIndex": 1, "sectionBreak": {"sectionStyle": {}}}]
     objects = {}  # the pictures that say where they came from, as Google keeps them
+    lists = {}  # the lists, as Google keeps them
     for runs in paragraphs:
-        kind, alignment = "NORMAL_TEXT", None
+        kind, alignment, bullet = "NORMAL_TEXT", None, None
+        if isinstance(runs, Listed):
+            bullet = {"listId": runs.list_id}
+            if runs.level:
+                bullet["nestingLevel"] = runs.level
+            levels = lists.setdefault(runs.list_id, {"listProperties": {"nestingLevels": [
+                {"glyphSymbol": "\u25cf"} for _ in range(9)]}})["listProperties"]["nestingLevels"]
+            if runs.numbered:
+                levels[runs.level] = {"glyphType": "DECIMAL", "glyphFormat": "%%%d." % runs.level}
+                if runs.start is not None:
+                    levels[runs.level]["startNumber"] = runs.start
+            runs = runs.runs
         if isinstance(runs, Styled):
             kind, alignment, runs = runs.kind, runs.alignment, runs.runs
         if isinstance(runs, str):
@@ -637,11 +663,15 @@ def described(paragraphs, revision="revision-1"):
         style = {"namedStyleType": kind}
         if alignment:
             style["alignment"] = alignment
-        content.append({"startIndex": start, "endIndex": index, "paragraph": {
-            "elements": elements, "paragraphStyle": style}})
+        paragraph = {"elements": elements, "paragraphStyle": style}
+        if bullet:
+            paragraph["bullet"] = bullet
+        content.append({"startIndex": start, "endIndex": index, "paragraph": paragraph})
     answer = {"documentId": "a-document", "revisionId": revision, "body": {"content": content}}
     if objects:
         answer["inlineObjects"] = objects
+    if lists:
+        answer["lists"] = lists
     return answer
 
 

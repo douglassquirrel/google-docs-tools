@@ -11,7 +11,7 @@ that changes anything at Google is adding a comment. The Google layer came from
 
 | Command | Job |
 |---|---|
-| `read-doc` | Print a Google Doc as text: headings with `#`, **bold**, *italic*, links, a `---` for a rule. Reads only. |
+| `read-doc` | Print a Google Doc as text: headings with `#`, **bold**, *italic*, links, list items, a `---` for a rule. Reads only. |
 | `comment-doc` | Add a comment on some of the document's words, addressed to a named person if wanted; or list the document's comments. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
@@ -106,7 +106,8 @@ or its whole address.
     read-doc DOC [--title] [--highlights] [--timeout SECONDS]
 
 Prints the body as text: the title and headings with one `#` per level (the title counts as
-level 1), `**bold**`, `*italic*`, `[words](address)` for a link, a blank line between paragraphs,
+level 1), `**bold**`, `*italic*`, `[words](address)` for a link, list items with `- ` or their number
+(`1. `) and two more spaces for each level, a blank line between paragraphs and between list items,
 `---` for a horizontal rule, and `<!-- not written: … -->` where a paragraph holds something that
 has no text form (a footnote reference, a person chip, an equation). Text in tables is read in its
 place. Empty paragraphs are left out. Every call to Google is a read.
@@ -200,7 +201,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 355 tests; coverage of `googledocstools/` 99% (the five statements not run build the
+invented. 376 tests; coverage of `googledocstools/` 99% (the five statements not run build the
 picture-and-caption requests that no command here makes yet). `tests/tier1/` are pure functions,
 `tests/tier2/` the commands against the stand-in.
 
@@ -215,6 +216,8 @@ still to come.
 
 - `read-doc` writes the body only: not headers, footers or footnotes' text (a footnote's place is
   marked), and not pictures (a paragraph that is only a picture is left out).
+- A numbered list is written in figures whatever the document shows: an item shown as `b.` or
+  `ii.` comes out as `2. `. A numbered heading has its number first (`1. ## Heading`).
 - A comment goes on words that are in the document exactly once, within one paragraph; Google
   shows it under All comments rather than anchored on the words.
 - Nothing here changes a document's text. Filling in text, inserting pictures or making links,
@@ -227,6 +230,9 @@ still to come.
   only, not mail.
 - 1 November 2026: running a command no longer writes `__pycache__` into the checkout, on any
   Python, so setting `PYTHONDONTWRITEBYTECODE` is no longer needed.
+- 1 November 2026: `read-doc` now marks list items (`- `, or `1. ` for a numbered list, two more
+  spaces for each level). They came out as plain paragraphs before, so the text of a document with
+  lists has changed.
 
 ## Contributing
 

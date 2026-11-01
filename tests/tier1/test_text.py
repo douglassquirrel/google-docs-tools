@@ -27,3 +27,20 @@ def test_highlights_are_marked_only_when_asked():
     paragraphs = [Paragraph("NORMAL_TEXT", [Span("plain "), Span("marked", highlight=True)])]
     assert as_text(paragraphs) == "plain marked\n"
     assert as_text(paragraphs, highlights=True) == "plain {==marked==}\n"
+
+
+def test_a_list_items_mark_goes_before_its_text_with_a_blank_line_between_items():
+    paragraphs = [Paragraph("NORMAL_TEXT", [Span("One")], mark="- "),
+                  Paragraph("NORMAL_TEXT", [Span("Under it")], mark="  - "),
+                  Paragraph("NORMAL_TEXT", [Span("Two", bold=True)], mark="2. "),
+                  Paragraph("NORMAL_TEXT", [Span("After")])]
+    assert as_text(paragraphs) == "- One\n\n  - Under it\n\n2. **Two**\n\nAfter\n"
+
+
+def test_an_empty_list_item_is_left_out_as_any_empty_paragraph_is():
+    assert as_text([Paragraph("NORMAL_TEXT", [], mark="- "),
+                    Paragraph("NORMAL_TEXT", [Span("x")])]) == "x\n"
+
+
+def test_a_heading_in_a_list_has_the_mark_first():
+    assert as_text([Paragraph("HEADING_2", [Span("One")], mark="1. ")]) == "1. ## One\n"

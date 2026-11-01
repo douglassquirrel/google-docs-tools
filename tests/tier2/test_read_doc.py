@@ -5,14 +5,14 @@ import sys
 
 import pytest
 
-from tests.conftest import RULE, Styled
+from tests.conftest import RULE, Listed, Styled
 from tests.tier2.conftest import DOC_ID, DOC_NAME
 
 
 def test_help_names_the_document_and_the_flags_and_contacts_nothing(read, fake):
     result = read("--help", defaults=False)
     assert result.code == 0
-    for word in ("DOC", "--highlights", "--title", "--timeout", "changes nothing"):
+    for word in ("DOC", "--highlights", "--title", "--timeout", "changes nothing", "list items"):
         assert word in result.out
     assert fake.calls == []
 
@@ -118,3 +118,20 @@ def test_the_command_runs_from_any_folder(tmp_path):
         check=False,
     )
     assert done.returncode == 0 and "--highlights" in done.stdout and done.stderr == ""
+
+
+def test_lists_are_marked_nested_and_numbered_and_a_paragraph_after_is_not(read, fake):
+    read.document([Styled("HEADING_1", "Contents"),
+                   Listed("Part one"), Listed("Chapter one", level=1),
+                   Listed("Chapter two", level=1), Listed("Part two"),
+                   Listed("First", "steps", numbered=True),
+                   Listed([("Second", {"bold": True})], "steps", numbered=True),
+                   "A paragraph after."])
+    result = read()
+    assert (result.code, result.err) == (0, "")
+    assert result.out == (
+        "# Contents\n\n"
+        "- Part one\n\n  - Chapter one\n\n  - Chapter two\n\n- Part two\n\n"
+        "1. First\n\n2. **Second**\n\n"
+        "A paragraph after.\n")
+    assert fake.writes() == []

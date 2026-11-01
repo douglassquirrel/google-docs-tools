@@ -26,8 +26,9 @@ def _parser():
     parser = argparse.ArgumentParser(
         prog=COMMAND,
         description="Print a Google Doc as text: its title and headings with #, **bold**, "
-        "*italic* and [links](address), a blank line between paragraphs, a --- for a horizontal "
-        "rule. Every call it makes to Google is a read; it changes nothing.",
+        "*italic* and [links](address), list items with -  or their number and two more spaces "
+        "for each level, a blank line between paragraphs, a --- for a horizontal rule. Every "
+        "call it makes to Google is a read; it changes nothing.",
         epilog="The Google secrets are read from the environment: source env.sh from the secrets "
         "folder (google-docs-tools-secrets) in the same command. Exit codes: 0 printed; 2 bad "
         "arguments; 3 cannot sign in to Google; 4 Google could not be reached or answered with "
