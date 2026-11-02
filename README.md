@@ -341,7 +341,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 634 tests; coverage of `googledocstools/` 99% (the five statements not run build the
+invented. 636 tests; coverage of `googledocstools/` 99% (the five statements not run build the
 picture-and-caption requests that no command here makes yet). `tests/tier1/` are pure functions,
 `tests/tier2/` the commands against the stand-in.
 
@@ -353,8 +353,11 @@ it between the two; `insert-picture --dry-run`, then for real, on a scratch docu
 and from an address, then `replace-picture --list` and `--picture 1` on it, checking each time that
 the uploaded copy is in the folder and no longer shared. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
-in, reading, comments, the snapshot); a real `--add`, real lists, and the picture commands are still
-to come.
+in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
+documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;
+`--picture 1` from a file of another shape (its link, width and caption kept) and `--picture 2` from
+an address; each uploaded copy was left shared with its owner alone. A real `--add` and real lists
+are still to come.
 
 ## Known limitations
 
