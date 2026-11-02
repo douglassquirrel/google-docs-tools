@@ -215,6 +215,7 @@ def test_words_not_alone_in_their_paragraph_are_exit_5(insert, fake):
     insert.document(["See it here: " + PLACE])
     result = insert()
     assert result.code == 5 and "alone in its paragraph" in result.err and fake.writes() == []
+    assert "other words shares it" in result.err
 
 
 # --- --dry-run -------------------------------------------------------------------------------

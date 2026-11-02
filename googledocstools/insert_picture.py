@@ -25,7 +25,7 @@ from googledocstools.cli import (
     sign_in,
     the_document,
 )
-from googledocstools.document import alone, find, picture, text_size
+from googledocstools.document import alone, find, picture, sharing, text_size
 from googledocstools.markup import MarkupError, parse
 from googledocstools.putting import (
     add_source_arguments,
@@ -109,9 +109,10 @@ def _place(described, words, name):
                    % (words, name))
     start, end = places[0]
     if not alone(described, start, end):
-        raise Stop(UNEXPECTED, "%r is not alone in its paragraph in the document %r, and its "
-                   "paragraph is what becomes the picture. Put the words on a line of their own, "
-                   "then run this again. Nothing was changed." % (words, name))
+        raise Stop(UNEXPECTED, "%r is not alone in its paragraph in the document %r: %s shares "
+                   "it, and its paragraph is what becomes the picture. Put the words in a "
+                   "paragraph of their own, then run this again. Nothing was changed." % (
+                       words, name, " and ".join(sharing(described, start, end))))
     return start, end
 
 

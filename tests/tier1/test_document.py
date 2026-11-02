@@ -727,3 +727,23 @@ def test_a_replaced_picture_gets_the_old_ones_link_back_in_the_same_change():
         {"updateTextStyle": {"range": {"startIndex": 30, "endIndex": 31},
                              "textStyle": {"link": {"url": "https://v.example/x"}},
                              "fields": "link"}}]
+
+
+def test_what_shares_a_paragraph_with_some_words_is_named():
+    from tests.conftest import PICTURE, RuleThen, described
+
+    doc = described([RuleThen("[PICTURE]"), [("Words: [PICTURE]", {})],
+                     [(PICTURE, {}), ("[PICTURE]", {})], "[PICTURE]"])
+    found = document.find(doc, "[PICTURE]")
+    assert [document.sharing(doc, start, end) for start, end in found] == [
+        ["a horizontal rule (read-doc shows it as --- on the line before)"], ["other words"],
+        ["a picture"], []]
+
+
+def test_anything_else_sharing_the_paragraph_is_named_as_not_text():
+    from tests.conftest import described
+
+    doc = described(["[PICTURE]"])
+    paragraph = doc["body"]["content"][1]["paragraph"]
+    paragraph["elements"].append({"startIndex": 11, "endIndex": 12, "footnoteReference": {}})
+    assert document.sharing(doc, 1, 10) == ["something that is not text"]

@@ -377,6 +377,30 @@ def replacing(index, uri, width, link):
     return requests
 
 
+def sharing(described, start, end):
+    """What shares the paragraph of the text from start to end, which is in one paragraph: a
+    list of words for each kind of thing, [] if nothing does."""
+    found = []
+    for structural in _paragraphs_in(described["body"]["content"]):
+        if structural["startIndex"] <= start < structural["endIndex"]:
+            for element in structural["paragraph"]["elements"]:
+                if "horizontalRule" in element:
+                    what = "a horizontal rule (read-doc shows it as --- on the line before)"
+                elif "inlineObjectElement" in element:
+                    what = "a picture"
+                elif "textRun" in element:
+                    at, what = element["startIndex"], None
+                    for character in element["textRun"].get("content", ""):
+                        if not start <= at < end and character.strip():
+                            what = "other words"
+                        at += units(character)
+                else:
+                    what = "something that is not text"
+                if what and what not in found:
+                    found.append(what)
+    return found
+
+
 def alone(described, start, end):
     """Whether the text from start to end is the only thing in its paragraph but spaces."""
     for structural in _paragraphs_in(described["body"]["content"]):
