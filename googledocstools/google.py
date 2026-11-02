@@ -8,6 +8,7 @@ put a stand-in in its place. Ids, names and text are data: they are percent-enco
 address, quoted into a query or JSON-encoded into a body, never pasted in as they are.
 """
 import json
+import secrets
 import urllib.error
 import urllib.request
 from urllib.parse import quote, urlencode
@@ -21,6 +22,7 @@ SCOPES = (
     "https://www.googleapis.com/auth/drive",
 )
 DRIVE = "https://www.googleapis.com/drive/v3"
+UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
 DOCS = "https://docs.googleapis.com/v1"
 DOC_TYPE = "application/vnd.google-apps.document"
 FOLDER_TYPE = "application/vnd.google-apps.folder"
@@ -62,6 +64,11 @@ def https_send(method, url, headers, body, timeout):
         return error.code, error.read()
     except (urllib.error.URLError, OSError) as error:
         raise Unreachable(str(getattr(error, "reason", error)))
+
+
+def _boundary():
+    """A boundary between the parts of an upload: random, so it is next to never in the bytes."""
+    return "google-docs-tools-" + secrets.token_hex(16)
 
 
 def query_literal(text):
@@ -125,16 +132,22 @@ class Google:
         self.token = answer["access_token"]
         return answer
 
-    def _call(self, method, url, query=None, body=None, missing_is_none=False, raw=False):
+    def _call(self, method, url, query=None, body=None, missing_is_none=False, raw=False,
+              parts=None):
+        """parts, for an upload: (the content type, the bytes) sent as they are."""
         headers = {"Authorization": "Bearer %s" % self.token}
         data = None
         if body is not None:
             headers["Content-Type"] = "application/json; charset=utf-8"
             data = json.dumps(body).encode("utf-8")
+        if parts is not None:
+            headers["Content-Type"], data = parts
         if query:
             url = url + "?" + urlencode(query)
         status, answered = self.send(method, url, headers, data, self.timeout)
         if status == 404 and missing_is_none:
+            return None
+        if status == 204 and method == "DELETE":
             return None
         if status != 200:
             raise Answered(status, _message(_json(status, answered)))
@@ -242,6 +255,32 @@ class Google:
             body=body,
         )
         return answer.get("id")
+
+    def upload(self, folder_id, name, mime, data):
+        """Upload bytes as a new file in a folder, which is always named: its id, name and link."""
+        boundary = _boundary()
+        while boundary.encode("ascii") in data:
+            boundary = _boundary()
+        meta = json.dumps({"name": name, "parents": [folder_id]}).encode("utf-8")
+        mark = b"--" + boundary.encode("ascii")
+        body = (mark + b"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + meta
+                + b"\r\n" + mark + b"\r\nContent-Type: " + mime.encode("ascii") + b"\r\n\r\n"
+                + data + b"\r\n" + mark + b"--\r\n")
+        return self._call(
+            "POST", UPLOAD, {"uploadType": "multipart", "fields": "id,name,webViewLink"},
+            parts=("multipart/related; boundary=%s" % boundary, body))
+
+    def share_with_anyone(self, file_id):
+        """Let anyone with the link see a file; the id of that sharing, to take it back by."""
+        answer = self._call(
+            "POST", "%s/files/%s/permissions" % (DRIVE, quote(file_id, safe="")), {"fields": "id"},
+            body={"type": "anyone", "role": "reader"})
+        return answer.get("id")
+
+    def unshare(self, file_id, permission_id):
+        """Take back one sharing of a file. Google answers 204, with nothing."""
+        self._call("DELETE", "%s/files/%s/permissions/%s" % (
+            DRIVE, quote(file_id, safe=""), quote(permission_id, safe="")))
 
     def account(self):
         """The address of the Google account the access token belongs to."""

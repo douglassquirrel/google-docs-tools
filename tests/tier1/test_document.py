@@ -698,3 +698,32 @@ def test_a_paragraphs_pictures_are_each_ones_source_and_size_and_their_links_if_
         ("", {"picture": [["https://u.example/a.png", 283.5, 150], ["", None, None]],
               "link": ["", "https://v.example/w"]}),
         ("Words and  more", {"picture": [["https://u.example/b.png", None, None]]})]
+
+
+# --- replacing a picture ---------------------------------------------------------------------
+
+def test_each_pictures_width_is_listed_in_the_order_of_its_place_none_where_not_given():
+    from tests.conftest import PICTURE, described
+
+    doc = described([
+        [(PICTURE, {"source": "https://img.example/a.jpg", "size": (180, 120)})],
+        "Words.",
+        [(PICTURE, {}), (PICTURE, {"picture": {"uri": "https://img.example/b.png", "width": 90}})],
+    ])
+    assert document.picture_widths(doc) == [180, None, 90]
+    assert len(document.picture_widths(doc)) == len(document.picture_places(doc))
+
+
+def test_a_picture_is_replaced_by_taking_it_out_and_putting_the_new_one_in_at_its_width():
+    assert document.replacing(30, "https://img.example/new.png", 165.5, None) == [
+        {"deleteContentRange": {"range": {"startIndex": 30, "endIndex": 31}}},
+        {"insertInlineImage": {"location": {"index": 30}, "uri": "https://img.example/new.png",
+                               "objectSize": {"width": {"magnitude": 165.5, "unit": "PT"}}}},
+    ]
+
+
+def test_a_replaced_picture_gets_the_old_ones_link_back_in_the_same_change():
+    assert document.replacing(30, "https://img.example/new.png", 100, "https://v.example/x")[2:] == [
+        {"updateTextStyle": {"range": {"startIndex": 30, "endIndex": 31},
+                             "textStyle": {"link": {"url": "https://v.example/x"}},
+                             "fields": "link"}}]

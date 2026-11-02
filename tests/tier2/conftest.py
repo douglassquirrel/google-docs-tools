@@ -231,3 +231,83 @@ def watch(fake, env, tmp_path, capsys):
     run.file = file
     run.settings = settings
     return run
+
+
+UPLOADS = "uploads-folder"
+PICTURE_URL = "https://img.example/new-picture.png"
+PLACE = "[PICTURE HERE]"
+
+
+def _picture_runner(module, fake, env, tmp_path, capsys, first):
+    """Run insert-picture or replace-picture against a document held piece by piece, with an
+    uploads folder in the settings, the clock fixed, and secrets looked for in every run."""
+    from tests.conftest import FOLDER, invented_png
+
+    fake.add(UPLOADS, "Uploads", FOLDER)
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / ".google-docs-tools.conf"
+    settings.write_text("UPLOAD_FOLDER_ID=%s\n" % UPLOADS, encoding="utf-8")
+    file = tmp_path / "a frame grab.png"
+    file.write_bytes(invented_png(16, 12))
+
+    def run(*argv, defaults=True, environment=None):
+        args = list(argv)
+        if defaults:
+            args = [DOC_ID] + first(file) + args
+        code = module.main(
+            args, env=env if environment is None else environment, send=fake,
+            default_settings=str(settings),
+            clock=lambda: datetime(2026, 11, 2, 21, 50, tzinfo=timezone.utc))
+        captured = capsys.readouterr()
+        for secret in SECRETS:
+            assert secret not in captured.out and secret not in captured.err
+        assert "Traceback" not in captured.err
+        return Result(code, captured.out, captured.err)
+
+    def document(paragraphs):
+        fake.add_document(DOC_ID, DOC_NAME, ["root"], paragraphs)
+
+    run.file = file
+    run.settings = settings
+    run.document = document
+    return run
+
+
+@pytest.fixture
+def insert(fake, env, tmp_path, capsys):
+    """Run insert-picture: by default the invented PNG, in place of PLACE."""
+    from googledocstools import insert_picture
+
+    run = _picture_runner(insert_picture, fake, env, tmp_path, capsys,
+                          lambda file: ["--at", PLACE, "--image-file", str(file)])
+    run.document(["Words before.", PLACE, "Words after."])
+    return run
+
+
+@pytest.fixture
+def replace(fake, env, tmp_path, capsys):
+    """Run replace-picture: by default picture 2 of three, from the invented PNG."""
+    from googledocstools import replace_picture
+    from tests.conftest import PICTURE
+
+    run = _picture_runner(replace_picture, fake, env, tmp_path, capsys,
+                          lambda file: ["--picture", "2", "--image-file", str(file)])
+
+    def picture(uri, width, link=None):
+        look = {"picture": {"uri": uri, "width": width, "unit": "PT", "height": None}}
+        if link:
+            look["link"] = {"url": link}
+        return [(PICTURE, look)]
+
+    run.picture = picture
+    run.document([
+        "Before.",
+        picture("https://img.example/one.png", 220),
+        "Caption one.",
+        picture("https://img.example/two.png", 165, "https://v.example/two"),
+        "Caption two, under the second picture.",
+        picture("https://img.example/three.png", 300),
+        "After.",
+    ])
+    return run

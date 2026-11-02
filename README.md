@@ -1,11 +1,15 @@
 # google-docs-tools
 
 Small command-line programs for working on a Google Doc with an AI assistant: read the document
-as text, put comments in it or list them, and look at what has changed since the last look. For Squirrel's book projects (`wrangling-ai`,
+as text, put comments in it or list them, look at what has changed since the last look, and put a
+picture in, from a file or an address, or in place of one already there. For Squirrel's book projects (`wrangling-ai`,
 `beyond-ai`), whose drafts live in Google Docs, and for any other project that needs the same.
 Each command takes the document by its id or address, keeps everything particular to one project
-in a settings file or on the command line, and never changes the document's text: the one call
-that changes anything at Google is adding a comment. The Google layer came from
+in a settings file or on the command line, and never changes the document's words. What changes
+anything at Google is listed, and nothing else does: adding a comment; putting a picture in, or in
+place of another; and, for a picture from a file, uploading it into a named Drive folder and
+sharing that one copy with anyone only while Google fetches it, then taking the sharing back.
+Nothing is ever deleted or binned. The Google layer came from
 [online-publishing-tools](https://github.com/douglassquirrel/online-publishing-tools) on
 1 November 2026, copied and made general; that repository keeps its own.
 
@@ -14,6 +18,8 @@ that changes anything at Google is adding a comment. The Google layer came from
 | `read-doc` | Print a Google Doc as text: headings with `#`, **bold**, *italic*, links, list items, a `---` for a rule. Reads only. |
 | `comment-doc` | Add a comment on some of the document's words, addressed to a named person if wanted; or list the document's comments. |
 | `watch-doc` | One quiet look at a document and its comments: only what changed since the last look. Reads only, and writes its own snapshot file. |
+| `insert-picture` | Put a picture where some words stand alone in their paragraph, from a file or an address, with a caption and a link if wanted. |
+| `replace-picture` | List the pictures, or put a new picture in place of one, keeping its link, width and caption. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
 ## Requirements
@@ -209,6 +215,74 @@ The snapshot holds the document's text, so it is written readable by its owner a
 beside FILE and moved into place after the look is printed, so a failure leaves the old one, and is
 saved on every run that gets that far, whether or not anything was new.
 
+### `insert-picture`: a picture where some words are
+
+    insert-picture DOC --at WORDS (--image-file FILE | --image-url URL) [--caption TEXT] [--link URL]
+                   [--width POINTS] [--no-centre] [--folder ID] [--settings FILE] [--dry-run] [--timeout SECONDS]
+
+The words (a placeholder such as `[PICTURE]`) must be in the document exactly once and alone in
+their paragraph, which becomes the picture. The picture is centred, and its caption with it, unless
+`--no-centre`. It is one change to the document, made whole or not at all, and only if nobody has
+changed the document since it was read.
+
+```bash
+./insert-picture DOCUMENT-ID --at "[PICTURE]" --image-file ~/Desktop/frame.png --caption "A *frame* grab." --dry-run
+```
+
+    Dry run: nothing was uploaded, shared or changed.
+    Document: My book
+    Link: https://docs.google.com/document/d/DOCUMENT-ID/edit
+    In place of: [PICTURE]
+    Picture: /Users/you/Desktop/frame.png (PNG, 1406 x 1046 pixels)
+    Would upload: picture for My book, 2026-11-02 21:50 UTC, frame.png, into the folder FOLDER-ID, shared only while it goes in
+    Width: 220 pt
+    Centred: yes
+    Caption paragraphs: 1
+    Caption size: 10 pt
+
+| Flag | Meaning |
+|---|---|
+| `--at WORDS` | The words the picture takes the place of. |
+| `--image-file FILE` | A PNG, JPEG or GIF on this machine, known by its first bytes, not its name; under 50 MB and at most 25 megapixels. |
+| `--image-url URL` | Instead, a public `https://` address; Google fetches it, and nothing is uploaded or shared. |
+| `--caption TEXT` | A caption under the picture, in `read-doc`'s markup (`**bold**`, `*italic*`, `[words](address)`; a blank line starts a new paragraph), one point smaller than the text it replaces. |
+| `--link URL` | Make the picture itself a link (`http://` or `https://`). |
+| `--width POINTS` | The picture's width. Default 220. Google keeps its proportions. |
+| `--no-centre` | Leave the alignment as the words' paragraph had it. |
+| `--folder ID` | The Drive folder an uploaded copy goes into: the part of the folder's address after `/folders/`. Without it, the setting `UPLOAD_FOLDER_ID`. Needed with `--image-file`. |
+| `--settings FILE` | The settings file. Without it, `~/.google-docs-tools.conf` if it exists. |
+| `--dry-run` | Check everything and read the document, then say what would be done; upload, share and change nothing. |
+| `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
+**A picture from a file, and sharing.** Google puts a picture into a document only from an address
+it can fetch, and will not fetch a Drive file that is not shared. So the file is uploaded into the
+folder, named `picture for <document>, <time> UTC, <file name>`; that one copy is shared "anyone
+with the link can view" for the one change to the document; and the sharing is taken back straight
+after, whether the change worked or not. The document keeps its own copy of the picture, so it stays
+after the sharing is gone. The uploaded copy stays in the folder, not shared, and the run prints its
+link. If the sharing cannot be taken back, the run fails with exit 4 and a message starting `STILL
+SHARED` that names the copy: open it in Drive, choose Share, and set General access to Restricted.
+
+### `replace-picture`: a new picture in place of an old one
+
+    replace-picture DOC --list
+    replace-picture DOC --picture N (--image-file FILE | --image-url URL) [--width POINTS] [--folder ID]
+                    [--settings FILE] [--dry-run] [--timeout SECONDS]
+
+`--list` prints the pictures, numbered in the order they come in the document, and reads only:
+
+    3 pictures in My book
+    1. 220 pt wide, from https://img.example/one.png, then "A caption under it."
+    2. 165 pt wide, from https://img.example/two.png, linked to https://v.example/two, then "Another caption."
+    3. width not given
+
+`--picture N` puts the new picture in place of picture N, at its width unless `--width` is given,
+with its link, in one change: the old picture is taken out and the new one put in at the same place,
+so the caption under it and its paragraph's alignment stay as they were. (Google's own way of
+swapping a picture crops the new one to the old one's shape.) The new picture's height follows its
+own shape. A picture from a file is uploaded and shared just as for `insert-picture`; `--dry-run`
+says which picture would go and changes nothing.
+
 ### `google-sign-in`: the one-time sign-in
 
     google-sign-in --account EMAIL --env-file FILE [--port N] [--timeout SECONDS] [--dry-run]
@@ -230,6 +304,7 @@ model. A flag, where there is one, wins over the file.
 | `COMMENT_RECIPIENTS` | `comment-doc` | The only addresses a comment may be addressed to or name, with commas between. |
 | `NOTE_OPEN`, `NOTE_CLOSE` | `watch-doc` | What a note starts and ends with. Default `[` and `]`. |
 | `PLACEHOLDER_OPEN`, `PLACEHOLDER_CLOSE` | `watch-doc` | What a placeholder starts and ends with. Default `{` and `}`. |
+| `UPLOAD_FOLDER_ID` | `insert-picture`, `replace-picture` | The Drive folder a picture from a file is uploaded into. |
 | `SKIP_DOUBLED` | `watch-doc` | `yes` or `no`: whether text in doubled note markers is left out of the notes. Default `yes`. |
 
 ### The secrets
@@ -245,9 +320,10 @@ same command as the tool. A missing one stops the command with exit 3 and the li
 |---|---|
 | 0 | Done (or, with `--dry-run`, checked). For `watch-doc`, the look worked, whether or not anything is new: the summary line says which. |
 | 2 | Bad arguments or settings: a `DOC` that is not an id or an address, flags that do not go together, an address not in `COMMENT_RECIPIENTS`, an unreadable `--settings` file, an empty marker. For `watch-doc`, also a `--snapshot` file that is not its snapshot of this document, or no folder to make it in; the file is left as it was. |
+| 2, for the picture commands | Also: a picture file that is not a PNG, JPEG or GIF, is empty, over 50 MB or over 25 megapixels; no upload folder; `--list` with other flags. Nothing is contacted. |
 | 3 | Cannot sign in to Google: a secret is not set or empty, or Google refused the stored token (run `google-sign-in` again). |
-| 4 | Google could not be reached, or answered with an error; the message names the step and Google's own words. |
-| 5 | The document is not as it must be: no document with that id that this account can see, in the bin, not a Google Doc; or the words of `--on` are not in it exactly once. For `watch-doc`, also a snapshot that could not be written: the look was printed, the old snapshot stands, and the next look reports the same again. |
+| 4 | Google could not be reached, or answered with an error; the message names the step and Google's own words. For the picture commands, also a picture Google could not fetch, a document changed by someone while the command ran (run it again), or a sharing that could not be taken back (`STILL SHARED`, see above). When Google stopped answering partway, the message says what may or may not have happened. |
+| 5 | The document is not as it must be: no document with that id that this account can see, in the bin, not a Google Doc; or the words of `--on` or `--at` are not in it exactly once, or `--at`'s are not alone in their paragraph; no picture N; an upload folder this account cannot see; Google not saying an old picture's width (give `--width`). For `watch-doc`, also a snapshot that could not be written: the look was printed, the old snapshot stands, and the next look reports the same again. |
 
 Every message says what happened and what to do, on standard error, with the command's name
 first; there is never a traceback. When a comment was being added as Google went out of reach, the
@@ -265,7 +341,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 513 tests; coverage of `googledocstools/` 99% (the five statements not run build the
+invented. 634 tests; coverage of `googledocstools/` 99% (the five statements not run build the
 picture-and-caption requests that no command here makes yet). `tests/tier1/` are pure functions,
 `tests/tier2/` the commands against the stand-in.
 
@@ -273,9 +349,12 @@ picture-and-caption requests that no command here makes yet). `tests/tier1/` are
 document you have shared with the account, with `--title`; `comment-doc --list` on it; `comment-doc
 --add … --dry-run` on words in it; then one real `--add` and `--list` again to see it; `read-doc` on
 a document with a nested bullet list and a numbered list; `watch-doc` twice on a document, editing
-it between the two. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+it between the two; `insert-picture --dry-run`, then for real, on a scratch document, from a file
+and from an address, then `replace-picture --list` and `--picture 1` on it, checking each time that
+the uploaded copy is in the folder and no longer shared. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
-in, reading, comments, the snapshot); a real `--add`, and real lists, are still to come.
+in, reading, comments, the snapshot); a real `--add`, real lists, and the picture commands are still
+to come.
 
 ## Known limitations
 
@@ -288,8 +367,9 @@ in, reading, comments, the snapshot); a real `--add`, and real lists, are still 
   each look is compared with the one before.
 - A comment goes on words that are in the document exactly once, within one paragraph; Google
   shows it under All comments rather than anchored on the words.
-- Nothing here changes a document's text. Filling in text, inserting pictures or making links,
-  which `online-publishing-tools` does for the weekly email, is not here until a project asks for it.
+- Nothing here changes a document's words. Filling in text or making links, which
+  `online-publishing-tools` does for the weekly email, is not here until a project asks for it.
+- A picture's height is left to Google, which keeps the picture's own proportions.
 
 ## Notes for users
 
@@ -302,6 +382,9 @@ in, reading, comments, the snapshot); a real `--add`, and real lists, are still 
   spaces for each level). They came out as plain paragraphs before, so the text of a document with
   lists has changed.
 - 1 November 2026: new command, `watch-doc`.
+- 2 November 2026: new commands, `insert-picture` and `replace-picture`, and the setting
+  `UPLOAD_FOLDER_ID`. They are the first commands here that change a document, and the first that
+  upload or share anything (briefly, and taken back).
 
 ## Contributing
 

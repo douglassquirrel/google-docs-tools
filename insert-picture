@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""insert-picture: see --help."""
+import os
+import sys
+
+sys.dont_write_bytecode = True  # a run leaves the checkout as it found it
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from googledocstools.insert_picture import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

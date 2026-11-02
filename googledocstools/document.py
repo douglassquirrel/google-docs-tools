@@ -351,6 +351,32 @@ def picture_places(described):
     return places
 
 
+def picture_widths(described):
+    """Each picture's width in points, in the order picture_places() gives them; None where
+    Google does not say."""
+    objects = described.get("inlineObjects", {})
+    return [objects.get(element["inlineObjectElement"]["inlineObjectId"], {}).get(
+                "inlineObjectProperties", {}).get("embeddedObject", {}).get("size", {}).get(
+                "width", {}).get("magnitude")
+            for structural in _paragraphs_in(described["body"]["content"])
+            for element in structural["paragraph"]["elements"]
+            if "inlineObjectElement" in element]
+
+
+def replacing(index, uri, width, link):
+    """The requests that put a new picture in place of the one at index, at this width, with
+    this link (None for none). Taken out and put in, not Google's replaceImage, which crops the
+    new picture to the old one's shape."""
+    requests = [
+        {"deleteContentRange": {"range": {"startIndex": index, "endIndex": index + 1}}},
+        {"insertInlineImage": {"location": {"index": index}, "uri": uri,
+                               "objectSize": {"width": {"magnitude": width, "unit": "PT"}}}},
+    ]
+    if link:
+        requests.append(picture_link(index, link))
+    return requests
+
+
 def alone(described, start, end):
     """Whether the text from start to end is the only thing in its paragraph but spaces."""
     for structural in _paragraphs_in(described["body"]["content"]):

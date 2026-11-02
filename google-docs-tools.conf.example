@@ -17,3 +17,7 @@
 #PLACEHOLDER_OPEN={
 #PLACEHOLDER_CLOSE=}
 #SKIP_DOUBLED=yes
+
+# insert-picture, replace-picture: the Drive folder a picture from a file is uploaded into (the part
+# of the folder's address after /folders/). The id below is invented.
+#UPLOAD_FOLDER_ID=an-invented-folder-id

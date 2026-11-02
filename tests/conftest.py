@@ -3,7 +3,9 @@ import base64
 import io
 import json
 import re
+import struct
 import zipfile
+import zlib
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, unquote, urlsplit
 from xml.sax.saxutils import escape
@@ -100,11 +102,14 @@ class FakeGoogle:
         self.edit = None  # what that person does, given the document's entry (default: types "!")
         self.unfetchable = set()  # picture addresses the stand-in "cannot fetch"
         self.mail = {}  # message id -> the message, as add_mail() made it
+        self.uploads = 0
+        self.shares = 0
+        self.unshare_refused = False  # Google refuses to take a sharing back
 
     def add(self, file_id, name, kind=DOC, parents=(), text="", trashed=False):
         self.files[file_id] = {
             "id": file_id, "name": name, "mimeType": kind, "parents": list(parents),
-            "text": text, "trashed": trashed,
+            "text": text, "trashed": trashed, "permissions": [],
         }
 
     def add_document(self, file_id, name, parents, paragraphs, revision="revision-1"):
@@ -217,8 +222,13 @@ class FakeGoogle:
             return self._list(call)
         if host == "gmail.googleapis.com":
             return self._mail(call)
+        if host == "www.googleapis.com" and path == "/upload/drive/v3/files" and method == "POST":
+            return self._upload(call)
         # Matched on the address as sent, so an id with a slash in it is still one piece.
         raw = call["raw_path"]
+        match = re.fullmatch(r"/drive/v3/files/([^/]+)/permissions(?:/([^/]+))?", raw)
+        if host == "www.googleapis.com" and match:
+            return self._permissions(call, unquote(match.group(1)), match.group(2))
         match = re.fullmatch(r"/drive/v3/files/([^/]+)/comments", raw)
         if host == "www.googleapis.com" and match:
             return self._comments(call, unquote(match.group(1)))
@@ -454,6 +464,13 @@ class FakeGoogle:
                 position = place(wanted["location"]["index"])
                 if position is None or position >= len(characters):
                     return refuse("Invalid requests[%d].insertInlineImage: bad index" % number)
+                drive = re.fullmatch(r"https://drive\.google\.com/uc\?id=([^&]+)", wanted["uri"])
+                if drive and not any(
+                        sharing.get("type") == "anyone" for sharing in
+                        self.files.get(drive.group(1), {}).get("permissions", [])):
+                    # As online-publishing-tools found, 2 November 2026: a Drive file not shared.
+                    return refuse("Invalid requests[%d].insertInlineImage: Access to the "
+                                  "provided image was forbidden." % number)
                 if wanted["uri"] in self.unfetchable:
                     return refuse(
                         "Invalid requests[%d].insertInlineImage: There was a problem retrieving "
@@ -502,6 +519,52 @@ class FakeGoogle:
         entry["revision"] = "revision-%d" % (int(entry["revision"].rsplit("-", 1)[1]) + 1)
         return 200, {"documentId": doc_id, "replies": [{} for _ in body["requests"]],
                      "writeControl": {"requiredRevisionId": entry["revision"]}}
+
+    def _upload(self, call):
+        """A file uploaded in two parts, as Drive takes it: its name and folders, then its bytes."""
+        if call["query"].get("uploadType") != ["multipart"]:
+            return 400, {"error": {"code": 400, "message": "Bad uploadType"}}
+        kind, _, boundary = call["headers"].get("Content-Type", "").partition("; boundary=")
+        if kind != "multipart/related" or not boundary:
+            return 400, {"error": {"code": 400, "message": "Bad content type"}}
+        mark = b"--" + boundary.encode("ascii")
+        parts = call["body"].split(mark)
+        if len(parts) != 4 or parts[0] != b"" or parts[3] != b"--\r\n":
+            raise AssertionError("not two parts between boundaries: %r" % call["body"][:200])
+        (meta_head, meta), (data_head, data) = (
+            part[2:-2].split(b"\r\n\r\n", 1) for part in parts[1:3])
+        if meta_head != b"Content-Type: application/json; charset=UTF-8":
+            raise AssertionError("the first part is not JSON: %r" % meta_head)
+        wanted = json.loads(meta.decode("utf-8"))
+        self.uploads += 1
+        new_id = "upload-%d" % self.uploads
+        self.add(new_id, wanted["name"], data_head.decode("ascii")[len("Content-Type: "):],
+                 wanted.get("parents", ["root"]))
+        self.files[new_id]["data"] = data
+        return 200, {"id": new_id, "name": wanted["name"], "webViewLink": self.link(new_id)}
+
+    def _permissions(self, call, file_id, permission_id):
+        """A file's sharing: one added (POST) or one taken away (DELETE, answered 204, empty)."""
+        entry = self.files.get(file_id)
+        if entry is None:
+            return 404, {"error": {"code": 404, "message": "File not found: %s." % file_id}}
+        held = entry["permissions"]
+        if call["method"] == "POST" and permission_id is None:
+            wanted = json.loads(call["body"].decode("utf-8"))
+            self.shares += 1
+            made = dict(wanted, id="permission-%d" % self.shares)
+            held.append(made)
+            return 200, {"id": made["id"]}
+        if call["method"] == "DELETE" and permission_id is not None:
+            if self.unshare_refused:
+                return 500, {"error": {"code": 500, "message": "Internal Error"}}
+            found = [p for p in held if p["id"] == unquote(permission_id)]
+            if not found:
+                return 404, {"error": {"code": 404, "message": "Permission not found: %s."
+                                       % permission_id}}
+            held.remove(found[0])
+            return 204, b""
+        return 405, {"error": {"code": 405, "message": "Method not allowed"}}
 
     def _comments(self, call, file_id):
         """A file's comments: listed a page at a time, or one added. Both must name fields."""
@@ -631,19 +694,25 @@ def described(paragraphs, revision="revision-1"):
                 text += "\n"
             if text.startswith(PICTURE):
                 # As at Google: a picture is an element of its own, one position wide.
-                source = style.get("source")  # given as the picture's style: {"source": address}
-                size = style.get("size")  # and its size in points: {"size": (width, height)}
+                # Given as the picture's style: {"source": address} and its size in points,
+                # {"size": (width, height)}; or as the stand-in keeps one it put in itself,
+                # {"picture": {"uri": address, "width": points, "height": points or None}}.
+                put = style.get("picture") or {}
+                source = style.get("source", put.get("uri"))
+                size = style.get("size")
+                if size is None and put.get("width") is not None:
+                    size = (put["width"], put.get("height"))
                 object_id = "picture" if source is None else "picture:" + source
                 if size is not None:
-                    object_id += "@%gx%g" % size
+                    object_id += "@%sx%s" % size
                 if source is not None or size is not None:
                     embedded = {}
                     if source is not None:
                         embedded["imageProperties"] = {"sourceUri": source}
                     if size is not None:
-                        embedded["size"] = {
-                            "width": {"magnitude": size[0], "unit": "PT"},
-                            "height": {"magnitude": size[1], "unit": "PT"}}
+                        embedded["size"] = {"width": {"magnitude": size[0], "unit": "PT"}}
+                        if size[1] is not None:
+                            embedded["size"]["height"] = {"magnitude": size[1], "unit": "PT"}
                     objects[object_id] = {"inlineObjectProperties": {"embeddedObject": embedded}}
                 element = {"inlineObjectId": object_id}
                 if "link" in style:
@@ -681,3 +750,29 @@ def wiki():
     from tests.invented_commons import FakeCommons
 
     return FakeCommons()
+
+
+def invented_png(width=16, height=12):
+    """A small PNG made here, a gradient: nothing real."""
+    rows = b"".join(b"\0" + bytes(value for x in range(width)
+                                  for value in (255 - x * 255 // width, y * 255 // height, 60))
+                    for y in range(height))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(
+            ">I", zlib.crc32(kind + data) & 0xffffffff)
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def invented_gif(width=10, height=8):
+    """The start of a GIF, as far as its size, then a little more: made here."""
+    return b"GIF89a" + struct.pack("<HH", width, height) + b"\x00\x00\x00" + b";"
+
+
+def invented_jpeg(width=20, height=15):
+    """A JPEG's markers as far as its frame header, which gives its size: made here."""
+    app0 = b"\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    frame = b"\xff\xc0" + struct.pack(">HBHHB", 11, 8, height, width, 1) + b"\x01\x11\x00"
+    return b"\xff\xd8" + app0 + b"\xff\xff" + frame + b"\xff\xd9"

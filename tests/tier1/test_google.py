@@ -307,3 +307,55 @@ def test_add_comment_with_no_quoted_words_sends_the_text_alone(fake):
     made = signed_in(fake).add_comment("doc", HOSTILE)
     assert json.loads(fake.calls[-1]["body"].decode("utf-8")) == {"content": HOSTILE}
     assert made == "comment-1"
+
+
+def test_upload_sends_the_name_and_the_folder_as_json_and_the_bytes_as_they_are(fake):
+    fake.add("folder-1", "Uploads", FOLDER)
+    data = b"\x89PNG\r\n\x1a\n--not-a-boundary \xff\x00 bytes"
+    made = signed_in(fake).upload("folder-1", HOSTILE, "image/png", data)
+    call = fake.calls[-1]
+    assert (call["method"], call["host"], call["path"]) == (
+        "POST", "www.googleapis.com", "/upload/drive/v3/files")
+    assert call["query"]["uploadType"] == ["multipart"]
+    assert call["headers"]["Content-Type"].startswith("multipart/related; boundary=")
+    entry = fake.files[made["id"]]
+    assert (entry["name"], entry["parents"], entry["mimeType"], entry["data"]) == (
+        HOSTILE, ["folder-1"], "image/png", data)
+    assert made["webViewLink"] == fake.link(made["id"])
+
+
+def test_the_upload_boundary_is_never_in_the_bytes(fake, monkeypatch):
+    fake.add("folder-1", "Uploads", FOLDER)
+    boundaries = iter(["aaaa", "bbbb"])
+    monkeypatch.setattr(google, "_boundary", lambda: next(boundaries))
+    made = signed_in(fake).upload("folder-1", "x.png", "image/png", b"has aaaa in it")
+    assert fake.calls[-1]["headers"]["Content-Type"] == "multipart/related; boundary=bbbb"
+    assert fake.files[made["id"]]["data"] == b"has aaaa in it"
+
+
+def test_share_with_anyone_asks_for_readers_and_gives_back_the_sharings_id(fake):
+    fake.add("file-1", "x.png", "image/png")
+    shared = signed_in(fake).share_with_anyone("file-1")
+    call = fake.calls[-1]
+    assert (call["method"], call["path"]) == ("POST", "/drive/v3/files/file-1/permissions")
+    assert json.loads(call["body"].decode("utf-8")) == {"type": "anyone", "role": "reader"}
+    assert fake.files["file-1"]["permissions"] == [
+        {"id": shared, "type": "anyone", "role": "reader"}]
+
+
+def test_unshare_deletes_that_one_sharing_and_takes_googles_empty_answer(fake):
+    fake.add("file-1", "x.png", "image/png")
+    session = signed_in(fake)
+    shared = session.share_with_anyone("file-1")
+    assert session.unshare("file-1", shared) is None
+    call = fake.calls[-1]
+    assert (call["method"], call["path"]) == (
+        "DELETE", "/drive/v3/files/file-1/permissions/%s" % shared)
+    assert fake.files["file-1"]["permissions"] == []
+
+
+def test_unshare_that_google_refuses_is_an_error(fake):
+    fake.add("file-1", "x.png", "image/png")
+    with pytest.raises(google.Answered) as raised:
+        signed_in(fake).unshare("file-1", "no-such-sharing")
+    assert raised.value.status == 404

@@ -44,6 +44,7 @@ def _positive(what):
 
 
 seconds = _positive("seconds")
+points = _positive("points")
 
 
 def document_id(text):
