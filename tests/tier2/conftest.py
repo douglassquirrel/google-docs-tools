@@ -344,3 +344,16 @@ def count(fake, env, capsys):
 
     fake.add_described(DOC_ID, DOC_NAME, ["root"], ["Unused."])
     return command_runner(count_doc, fake, env, capsys)
+
+
+@pytest.fixture
+def typography(fake, env, tmp_path, capsys):
+    """Run check-typography against a document, with a settings file of its own (empty at first)."""
+    from googledocstools import check_typography
+
+    fake.add_described(DOC_ID, DOC_NAME, ["root"], ["Unused."])
+    settings = tmp_path / "home" / ".google-docs-tools.conf"
+    settings.parent.mkdir()
+    run = command_runner(check_typography, fake, env, capsys, default_settings=settings)
+    run.settings = settings
+    return run

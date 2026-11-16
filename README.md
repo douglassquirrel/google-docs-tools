@@ -21,6 +21,7 @@ Nothing is ever deleted or binned. The Google layer came from
 | `insert-picture` | Put a picture where some words stand alone in their paragraph, from a file or an address, with a caption and a link if wanted. |
 | `replace-picture` | List the pictures, or put a new picture in place of one, keeping its link, width and caption. |
 | `count-doc` | The words in each chapter (or part) of a document, and the total, counted as word-tools' `check-manuscript` counts. Reads only. |
+| `check-typography` | List straight quotes and apostrophes, double hyphens and spaced hyphens, with the curly quote or en dash each should be. Reads only. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
 ## Requirements
@@ -311,6 +312,37 @@ it would be with every pending suggestion accepted. Every call to Google is a re
 | `--exclude-lorem` | Leave out each paragraph of lorem ipsum filler: one that starts "Lorem ipsum" or "Duis aute", or of whose words more than half are lorem ipsum's own. Says how many words that was. |
 | `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
 
+### `check-typography`: straight quotes and odd dashes
+
+    check-typography DOC [--checks quotes,dashes] [--settings FILE] [--timeout SECONDS]
+
+Lists each paragraph (headings and list items included) that holds a straight double quote `"` or
+a straight apostrophe or single quote `'` (the check `quotes`), or a double hyphen `--` or a hyphen
+with a space each side ` - ` (the check `dashes`), with where it is, its first words, and a line for
+each word that needs fixing, with the word before and after, as it is and as it would be. A quote
+at the start of a paragraph, or after a space, an opening bracket or a dash, opens (“ ‘); any other
+closes (” ’, which is also the apostrophe). Both dashes become an en dash, `–`. Link text that is
+itself a web address, and merge tags in doubled brackets such as `[[contact.first_name]]`, are left
+out; a link's address is never part of the text. Every call to Google is a read: to make the
+changes, give them to `edit-doc`.
+
+    $ check-typography DOC
+    == Typography: 2 ==
+    under "## Briefly…": We don't want "this" -- or that.
+      We don't want → We don’t want
+      want "this" -- or → want “this” – or
+    under "## Briefly…": A spaced - hyphen.
+      spaced - hyphen. → spaced – hyphen.
+    Typography: 2 paragraphs to fix.
+
+| Flag | Meaning |
+|---|---|
+| `--checks LIST` | Which checks: a comma list of `quotes` and `dashes`. Wins over the setting `TYPOGRAPHY_CHECKS`; both, if neither is given. |
+| `--settings FILE` | The settings file to read instead of `~/.google-docs-tools.conf`. |
+| `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
+Exit code 0 when there is nothing to fix and 1 when there is something.
+
 ### `google-sign-in`: the one-time sign-in
 
     google-sign-in --account EMAIL --env-file FILE [--port N] [--timeout SECONDS] [--dry-run]
@@ -418,6 +450,7 @@ are still to come.
   upload or share anything (briefly, and taken back).
 
 - 16 November 2026: new command, `count-doc`.
+- 16 November 2026: new command, `check-typography`, and the setting `TYPOGRAPHY_CHECKS`.
 
 ## Contributing
 

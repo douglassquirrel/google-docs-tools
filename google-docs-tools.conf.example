@@ -21,3 +21,6 @@
 # insert-picture, replace-picture: the Drive folder a picture from a file is uploaded into (the part
 # of the folder's address after /folders/). The id below is invented.
 #UPLOAD_FOLDER_ID=an-invented-folder-id
+
+# check-typography: which checks to make, a comma list of quotes and dashes. Both, if left out.
+#TYPOGRAPHY_CHECKS=quotes,dashes
