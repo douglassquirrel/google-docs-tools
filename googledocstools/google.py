@@ -204,9 +204,11 @@ class Google:
         )
         return answer.get("documentId")
 
-    def document(self, document_id):
-        """A document as the Docs API describes it: its revision and every piece of its body."""
-        return self._call("GET", "%s/documents/%s" % (DOCS, quote(document_id, safe="")))
+    def document(self, document_id, view=None):
+        """A document as the Docs API describes it: its revision and every piece of its body.
+        With a view, its pending suggestions are shown as that view mode of Google's says."""
+        return self._call("GET", "%s/documents/%s" % (DOCS, quote(document_id, safe="")),
+                          {"suggestionsViewMode": view} if view else None)
 
     def change_document(self, document_id, requests, revision):
         """Apply requests to a document, all or none, and only if it is still at this revision."""

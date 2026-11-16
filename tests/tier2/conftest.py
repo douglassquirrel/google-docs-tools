@@ -311,3 +311,36 @@ def replace(fake, env, tmp_path, capsys):
         "After.",
     ])
     return run
+
+
+def command_runner(module, fake, env, capsys, default_settings=None, first=()):
+    """Run a command's main() against the stand-in: DOC_ID and `first` before the arguments
+    unless defaults=False, secrets looked for in what it printed, and never a traceback."""
+
+    def run(*argv, defaults=True, environment=None):
+        args = list(argv)
+        if defaults:
+            args = [DOC_ID] + list(first) + args
+        extra = {} if default_settings is None else {"default_settings": str(default_settings)}
+        code = module.main(args, env=env if environment is None else environment, send=fake,
+                           **extra)
+        captured = capsys.readouterr()
+        for secret in SECRETS:
+            assert secret not in captured.out and secret not in captured.err
+        assert "Traceback" not in captured.err
+        return Result(code, captured.out, captured.err)
+
+    def document(paragraphs):
+        fake.files[DOC_ID]["described"] = paragraphs
+
+    run.document = document
+    return run
+
+
+@pytest.fixture
+def count(fake, env, capsys):
+    """Run count-doc against a document."""
+    from googledocstools import count_doc
+
+    fake.add_described(DOC_ID, DOC_NAME, ["root"], ["Unused."])
+    return command_runner(count_doc, fake, env, capsys)

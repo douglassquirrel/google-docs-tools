@@ -20,6 +20,7 @@ Nothing is ever deleted or binned. The Google layer came from
 | `watch-doc` | One quiet look at a document and its comments: only what changed since the last look. Reads only, and writes its own snapshot file. |
 | `insert-picture` | Put a picture where some words stand alone in their paragraph, from a file or an address, with a caption and a link if wanted. |
 | `replace-picture` | List the pictures, or put a new picture in place of one, keeping its link, width and caption. |
+| `count-doc` | The words in each chapter (or part) of a document, and the total, counted as word-tools' `check-manuscript` counts. Reads only. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
 ## Requirements
@@ -283,6 +284,33 @@ swapping a picture crops the new one to the old one's shape.) The new picture's 
 own shape. A picture from a file is uploaded and shared just as for `insert-picture`; `--dry-run`
 says which picture would go and changes nothing.
 
+### `count-doc`: the words in each chapter
+
+    count-doc DOC [--level N] [--exclude-braces] [--exclude-lorem] [--timeout SECONDS]
+
+Prints the words in each part of the document, then the total. A part starts at the title or at a
+heading at level N or above (default 2, so `##` and `#` headings each start one) and runs to the
+next; its heading's words count in it. Text before the first part has a line of its own. Words are
+counted as word-tools' `check-manuscript` counts them: what lies between spaces, in every paragraph
+of the body, headings, list items and tables included. Footnotes are not counted (`check-manuscript`
+adds notes to its total), and neither are chips, footnote marks or pictures. The document is read as
+it would be with every pending suggestion accepted. Every call to Google is a read.
+
+    $ count-doc DOC --exclude-braces
+       212  Before the first heading
+     4,702  Chapter 1: The start
+     3,951  Chapter 2: The middle
+     8,865  Total
+    Left out: 37 words in braces.
+    Pending suggestions are counted as if accepted.
+
+| Flag | Meaning |
+|---|---|
+| `--level N` | The heading level that starts a part, 1 to 6. Headings above it, and the title, start one too. Default 2. |
+| `--exclude-braces` | Leave out text in braces, `{like this}` (a brace with no partner in its paragraph is text), and say how many words that was. |
+| `--exclude-lorem` | Leave out each paragraph of lorem ipsum filler: one that starts "Lorem ipsum" or "Duis aute", or of whose words more than half are lorem ipsum's own. Says how many words that was. |
+| `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
 ### `google-sign-in`: the one-time sign-in
 
     google-sign-in --account EMAIL --env-file FILE [--port N] [--timeout SECONDS] [--dry-run]
@@ -388,6 +416,8 @@ are still to come.
 - 2 November 2026: new commands, `insert-picture` and `replace-picture`, and the setting
   `UPLOAD_FOLDER_ID`. They are the first commands here that change a document, and the first that
   upload or share anything (briefly, and taken back).
+
+- 16 November 2026: new command, `count-doc`.
 
 ## Contributing
 

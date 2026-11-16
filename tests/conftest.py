@@ -1,5 +1,6 @@
 """Shared stand-ins. No test reaches Google: FakeGoogle answers in its place, in memory."""
 import base64
+import copy
 import io
 import json
 import re
@@ -164,10 +165,11 @@ class FakeGoogle:
             return word_export(w_paragraphs(*texts))
         return b"PK\x03\x04 stand-in Word export of " + file_id.encode("utf-8")
 
-    def paragraphs(self, file_id):
-        """The document read back: paragraphs of (text, style) runs, like-styled text merged."""
+    def paragraphs(self, file_id, mode="SUGGESTIONS_INLINE"):
+        """The document read back: paragraphs of (text, style) runs, like-styled text merged,
+        pending suggestions shown as the view mode asks."""
         paragraphs, runs = [], []
-        for character, style in self.files[file_id]["characters"]:
+        for character, style in _viewed_runs(self.files[file_id]["characters"], mode):
             if character == "\n":
                 paragraphs.append(runs)
                 runs = []
@@ -361,16 +363,20 @@ class FakeGoogle:
             return 404, {"error": {"code": 404, "message": "Requested entity was not found."}}
         if call["query"].get("fields") == ["documentId"]:
             return 200, {"documentId": doc_id}
-        if call["query"]:
+        mode = call["query"].get("suggestionsViewMode", ["SUGGESTIONS_INLINE"])[0]
+        if set(call["query"]) - {"suggestionsViewMode"}:
             raise AssertionError("the tools ask for the id only, or for everything")
+        if mode not in VIEWS:
+            return 400, {"error": {"code": 400, "message": "Invalid value at "
+                                   "'suggestions_view_mode' (%s)" % mode}}
         if "described" in entry:
-            answer = described(entry["described"])
+            answer = described([_viewed(spec, mode) for spec in entry["described"]])
             answer["documentId"] = doc_id
             answer["title"] = entry["name"]
             return 200, answer
         if "characters" not in entry:
             raise AssertionError("this stand-in document was not added piece by piece")
-        answer = described(self.paragraphs(doc_id), entry["revision"])
+        answer = described(self.paragraphs(doc_id, mode), entry["revision"])
         answer["documentId"] = doc_id
         answer["title"] = entry["name"]
         if self.edited_after_reading and self.edits_left != 0:
@@ -607,6 +613,39 @@ def fake():
     return FakeGoogle()
 
 
+# How the Docs API can show a document's pending suggestions (its reference for documents.get, read
+# 16 November 2026): inline, with each suggested insertion and deletion marked on its text run; as if
+# all were accepted; as if none were.
+VIEWS = ("SUGGESTIONS_INLINE", "PREVIEW_SUGGESTIONS_ACCEPTED", "PREVIEW_WITHOUT_SUGGESTIONS")
+INSERTED, DELETED = "suggestedInsertionIds", "suggestedDeletionIds"
+
+
+def _viewed_runs(runs, mode):
+    """(text, style) pieces as a view mode shows them. A piece's style may hold INSERTED or DELETED,
+    a list of suggestion ids, which Google gives on the text run itself, not in its style."""
+    if mode == "SUGGESTIONS_INLINE":
+        return [[text, dict(style)] for text, style in runs]
+    dropped = DELETED if mode == "PREVIEW_SUGGESTIONS_ACCEPTED" else INSERTED
+    shown = []
+    for text, style in runs:
+        if style.get(dropped) and text != "\n":
+            continue
+        style = {key: value for key, value in style.items() if key not in (INSERTED, DELETED)}
+        shown.append([text, style])
+    return shown
+
+
+def _viewed(spec, mode):
+    """A paragraph given for described(), as a view mode shows it."""
+    if isinstance(spec, str) or spec is RULE:
+        return spec
+    if isinstance(spec, (Styled, Listed, RuleThen)):
+        copied = copy.copy(spec)
+        copied.runs = _viewed(spec.runs, mode)
+        return copied
+    return [tuple(run) for run in _viewed_runs(spec, mode)]
+
+
 def _units(text):
     # Counted here on its own terms, not with the code under test.
     return sum(2 if ord(character) > 0xFFFF else 1 for character in text)
@@ -726,8 +765,10 @@ def described(paragraphs, revision="revision-1"):
                 if not text:
                     continue
             end = index + _units(text)
-            elements.append({"startIndex": index, "endIndex": end,
-                             "textRun": {"content": text, "textStyle": dict(style)}})
+            run = {"content": text,
+                   "textStyle": {k: v for k, v in style.items() if k not in (INSERTED, DELETED)}}
+            run.update({k: list(v) for k, v in style.items() if k in (INSERTED, DELETED)})
+            elements.append({"startIndex": index, "endIndex": end, "textRun": run})
             index = end
         style = {"namedStyleType": kind}
         if alignment:
