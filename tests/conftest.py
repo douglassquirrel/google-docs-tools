@@ -106,6 +106,9 @@ class FakeGoogle:
         self.uploads = 0
         self.shares = 0
         self.unshare_refused = False  # Google refuses to take a sharing back
+        # The account may only view the document: as seen at Google on 16 November 2026, asking
+        # for a suggestions view mode then answers 403.
+        self.suggestions_hidden = False
 
     def add(self, file_id, name, kind=DOC, parents=(), text="", trashed=False):
         self.files[file_id] = {
@@ -381,6 +384,9 @@ class FakeGoogle:
         mode = call["query"].get("suggestionsViewMode", ["SUGGESTIONS_INLINE"])[0]
         if set(call["query"]) - {"suggestionsViewMode"}:
             raise AssertionError("the tools ask for the id only, or for everything")
+        if self.suggestions_hidden and "suggestionsViewMode" in call["query"]:
+            return 403, {"error": {"code": 403, "message": "You do not have permission to access "
+                                   "the document suggestions.", "status": "PERMISSION_DENIED"}}
         if mode not in VIEWS:
             return 400, {"error": {"code": 400, "message": "Invalid value at "
                                    "'suggestions_view_mode' (%s)" % mode}}

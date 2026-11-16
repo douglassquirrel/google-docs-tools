@@ -63,7 +63,7 @@ def _parser():
     return parser
 
 
-def _report(counted, args):
+def _report(counted, args, viewer=False):
     """The lines count-doc prints, the numbers lined up."""
     rows = [(part.words, "Before the first heading" if part.heading is None else part.heading)
             for part in counted.parts] + [(counted.total, "Total")]
@@ -73,7 +73,8 @@ def _report(counted, args):
         lines.append(f"Left out: {counted.braces:,} words in braces.")
     if args.exclude_lorem:
         lines.append(f"Left out: {counted.lorem:,} words of lorem ipsum.")
-    lines.append("Pending suggestions are counted as if accepted.")
+    lines.append("This account may only view the document, so any pending suggestions are not "
+                 "counted." if viewer else "Pending suggestions are counted as if accepted.")
     return "\n".join(lines) + "\n"
 
 
@@ -85,7 +86,16 @@ def _run(args, env, send, out):
         sign_in(session, client_id, client_secret, refresh_token)
         the_document(session, args.document, progress)
         progress.step = "reading the document"
-        described = session.document(args.document, ACCEPTED)
+        viewer = False
+        try:
+            described = session.document(args.document, ACCEPTED)
+        except google.Answered as error:
+            # As seen at Google on 16 November 2026: an account that may only view a document
+            # is refused its suggestions, but may read it as it is shown to a viewer.
+            if error.status != 403 or "suggestions" not in error.message:
+                raise
+            viewer = True
+            described = session.document(args.document)
     except google.Unreachable as error:
         raise Stop(GOOGLE, "Google could not be reached while %s: %s." % (progress.step, error))
     except google.Answered as error:
@@ -93,7 +103,7 @@ def _run(args, env, send, out):
                    % (progress.step, said(error)))
     counted = count_parts(paragraphs(described), args.level, args.exclude_braces,
                           args.exclude_lorem)
-    out.write(_report(counted, args))
+    out.write(_report(counted, args, viewer))
     return OK
 
 

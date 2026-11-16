@@ -300,7 +300,9 @@ next; its heading's words count in it. Text before the first part has a line of 
 counted as word-tools' `check-manuscript` counts them: what lies between spaces, in every paragraph
 of the body, headings, list items and tables included. Footnotes are not counted (`check-manuscript`
 adds notes to its total), and neither are chips, footnote marks or pictures. The document is read as
-it would be with every pending suggestion accepted. Every call to Google is a read.
+it would be with every pending suggestion accepted; an account that may only view the document is
+not shown its suggestions, so then they are not counted, and the last line says so. Every call to
+Google is a read.
 
     $ count-doc DOC --exclude-braces
        212  Before the first heading
@@ -527,7 +529,8 @@ seeing the suggestions in Google Docs and accepting one; `check-doc-format` with
 on a scratch document, then `--fix --dry-run`, `--fix`, and the check again; `watch-doc` twice on a document, editing
 it between the two; `insert-picture --dry-run`, then for real, on a scratch document, from a file
 and from an address, then `replace-picture --list` and `--picture 1` on it, checking each time that
-the uploaded copy is in the folder and no longer shared. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+the uploaded copy is in the folder and no longer shared. On 16 November 2026 `count-doc`, `check-typography` and `check-doc-format` (the check) ran on
+Google's public sample document, read-only. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
 in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
 documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;

@@ -152,3 +152,22 @@ def test_the_command_runs_from_any_folder(tmp_path):
         check=False,
     )
     assert done.returncode == 0 and "--exclude-lorem" in done.stdout and done.stderr == ""
+
+
+def test_an_account_that_may_only_view_counts_the_document_as_it_can_see_it(count, fake):
+    count.document([Styled("HEADING_2", "Chapter"), "Three words here."])
+    fake.suggestions_hidden = True
+    result = count()
+    assert (result.code, result.err) == (0, "")
+    assert result.out == (
+        "4  Chapter\n4  Total\n"
+        "This account may only view the document, so any pending suggestions are not counted.\n")
+    assert [c["query"] for c in fake.calls if c["path"] == "/v1/documents/" + DOC_ID] == [
+        {"suggestionsViewMode": ["PREVIEW_SUGGESTIONS_ACCEPTED"]}, {}]
+
+
+def test_any_other_refusal_of_the_suggestions_is_still_an_error(count, fake):
+    fake.answers[("GET", "/v1/documents/%s" % DOC_ID)] = (
+        403, {"error": {"code": 403, "message": "The caller does not have permission"}})
+    result = count()
+    assert result.code == 4 and "does not have permission" in result.err
