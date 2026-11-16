@@ -382,3 +382,26 @@ def edit(fake, env, tmp_path, capsys):
     run.write = write
     run.document = lambda paragraphs: fake.add_document(DOC_ID, DOC_NAME, ["root"], paragraphs)
     return run
+
+
+@pytest.fixture
+def doc_format(fake, env, tmp_path, capsys):
+    """Run check-doc-format against a document held piece by piece, with its named styles and
+    page, and a format file of its own."""
+    import json
+
+    from googledocstools import check_doc_format
+    from tests.tier1.test_doc_format import FORMAT, NAMED, PAGE
+
+    file = tmp_path / "house format.json"
+    file.write_text(json.dumps(FORMAT), encoding="utf-8")
+    run = command_runner(check_doc_format, fake, env, capsys, first=["--format", str(file)])
+
+    def document(paragraphs, page=PAGE):
+        fake.add_document(DOC_ID, DOC_NAME, ["root"], paragraphs)
+        fake.files[DOC_ID]["namedStyles"] = json.loads(json.dumps(NAMED))
+        fake.files[DOC_ID]["documentStyle"] = json.loads(json.dumps(page))
+
+    run.document = document
+    run.file = file
+    return run

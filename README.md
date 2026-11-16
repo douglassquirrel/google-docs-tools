@@ -26,6 +26,7 @@ Nothing is ever deleted or binned. The Google layer came from
 | `count-doc` | The words in each chapter (or part) of a document, and the total, counted as word-tools' `check-manuscript` counts. Reads only. |
 | `check-typography` | List straight quotes and apostrophes, double hyphens and spaced hyphens, with the curly quote or en dash each should be. Reads only. |
 | `edit-doc` | Make a list of find → replace edits in a document, as suggestions to accept or reject, or outright. The list has the shape of word-tools' `propose-edits` list. |
+| `check-doc-format` | Check a document against a house format (page, body text, list items, title and headings) and, with `--fix`, set it right, formatting only. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
 ## Requirements
@@ -393,6 +394,62 @@ would be with the suggestions accepted, and checks each edit's new words are the
 To make the fixes `check-typography` proposes, give each as an edit: `{"find": "We don't want",
 "replace": "We don’t want"}`.
 
+### `check-doc-format`: a document against its house format
+
+    check-doc-format DOC --format FORMAT.json [--fix] [--dry-run] [-v] [--timeout SECONDS]
+
+Checks the document against a house format and reports, grouped by what is wrong, each paragraph
+that does not match, with where it is and its first words (three of each kind unless `-v`); a
+heading at a level the format does not name; a heading that does not match its pattern; and normal
+text that looks like a heading (all bold, or 2 points or more above the body's size, in 15 words or
+fewer). What a paragraph has is what it sets itself, else what its named style sets in the
+document, else Google's default (Arial 11, single spacing). Paragraphs with no text are not checked
+for font, size, bold or colour. The check only reads.
+
+With `--fix`, it sets every font, size, bold, colour, alignment, line spacing, first-line indent,
+page break, keep-with-next, page size and margin that does not match, in one change made only if the
+document is as it was when read, then reads the document and checks it again. It never changes a
+character of text, never a heading's level, and never bold or italic in body text or list items
+(the author's emphasis); a heading at the wrong level, one not matching its pattern, and text that
+looks like a heading are reported and left for a person. With `--fix --dry-run` it says what it
+would set and changes nothing.
+
+The format file, every part optional (`check-doc-format.example.json` in this folder is a full one):
+
+```json
+{
+  "page": {"size": "letter", "margins_inches": 1},
+  "body": {"font": "Times New Roman", "size": 12, "line_spacing": 2, "first_line_indent_inches": 0.5},
+  "list": {"font": "Times New Roman", "size": 12, "line_spacing": 2, "first_line_indent_inches": 0},
+  "heading_2": {"font": "Times New Roman", "size": 16, "bold": true, "colour": "#000000",
+                "alignment": "centre", "page_break_before": true, "keep_with_next": true,
+                "pattern": "^Chapter \\d+: "}
+}
+```
+
+| Part | Settings |
+|---|---|
+| `page` | `size`: `letter`, `a4` or `[width, height]` in inches; `margins_inches`: one number for all four. |
+| `body` (normal text), `list` (list items) | `font`, `size` (points), `line_spacing` (a multiple of single: 2 is double), `first_line_indent_inches`. |
+| `title`, `heading_1` to `heading_6` | `font`, `size`, `bold`, `colour` (`#rrggbb`), `alignment` (`left`, `centre`, `right`, `justified`), `page_break_before`, `keep_with_next`, `pattern` (a regular expression the heading's text must match). |
+
+    $ check-doc-format DOC --format book.json
+    body text: font not Times New Roman: 1 paragraph
+      under "## Chapter 1: The start": Pasted from the web.
+    list items: first-line indent not 0 in: 1 paragraph
+      under "## Chapter 1: The start": An indented item.
+    Format: 2 problems in 2 paragraphs.
+
+| Flag | Meaning |
+|---|---|
+| `--format FILE` | The house format, a JSON file. Required. (Not `--settings`, which is the settings file for the other commands.) |
+| `--fix` | Set what does not match, then check again. |
+| `--dry-run` | With `--fix`: say what would be set; change nothing. |
+| `-v` | List every paragraph that does not match, not three of each kind. |
+| `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
+Exit code 0 when everything matches (after the fix, with `--fix`), 1 when something does not.
+
 ### `google-sign-in`: the one-time sign-in
 
     google-sign-in --account EMAIL --env-file FILE [--port N] [--timeout SECONDS] [--dry-run]
@@ -429,10 +486,14 @@ same command as the tool. A missing one stops the command with exit 3 and the li
 | Code | Meaning |
 |---|---|
 | 0 | Done (or, with `--dry-run`, checked). For `watch-doc`, the look worked, whether or not anything is new: the summary line says which. |
+| 1 | `check-typography`: something to fix. `check-doc-format`: something does not match the format (after the fix, with `--fix`). |
+| 2, for `edit-doc` and `check-doc-format` | Also: an edits or format file that cannot be read, is not JSON in UTF-8, or has faults; every fault is named. Nothing is contacted. |
 | 2 | Bad arguments or settings: a `DOC` that is not an id or an address, flags that do not go together, an address not in `COMMENT_RECIPIENTS`, an unreadable `--settings` file, an empty marker. For `watch-doc`, also a `--snapshot` file that is not its snapshot of this document, or no folder to make it in; the file is left as it was. |
 | 2, for the picture commands | Also: a picture file that is not a PNG, JPEG or GIF, is empty, over 50 MB or over 25 megapixels; no upload folder; `--list` with other flags. Nothing is contacted. |
 | 3 | Cannot sign in to Google: a secret is not set or empty, or Google refused the stored token (run `google-sign-in` again). |
 | 4 | Google could not be reached, or answered with an error; the message names the step and Google's own words. For the picture commands, also a picture Google could not fetch, a document changed by someone while the command ran (run it again), or a sharing that could not be taken back (`STILL SHARED`, see above). When Google stopped answering partway, the message says what may or may not have happened. |
+| 4, for `edit-doc` and `check-doc-format` | Also the document changed while the command read it (nothing was changed; run it again), or Google went out of reach while the change was being made (the message says it may or may not have been made, and how to look). |
+| 5, for `edit-doc` | Also an edit that cannot be made (each is named, and nothing was changed), or an edit not in the document afterwards. |
 | 5 | The document is not as it must be: no document with that id that this account can see, in the bin, not a Google Doc; or the words of `--on` or `--at` are not in it exactly once, or `--at`'s are not alone in their paragraph; no picture N; an upload folder this account cannot see; Google not saying an old picture's width (give `--width`). For `watch-doc`, also a snapshot that could not be written: the look was printed, the old snapshot stands, and the next look reports the same again. |
 
 Every message says what happened and what to do, on standard error, with the command's name
@@ -451,14 +512,19 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 636 tests; coverage of `googledocstools/` 99% (the five statements not run build the
-picture-and-caption requests that no command here makes yet). `tests/tier1/` are pure functions,
+invented. 835 tests, in about 10 seconds; coverage of `googledocstools/` 99% (the five statements
+not run build the picture-and-caption requests that no command here makes yet). The stand-in also
+holds pending suggestions and answers Google's suggestions view modes, as Google's reference
+describes them. `tests/tier1/` are pure functions,
 `tests/tier2/` the commands against the stand-in.
 
 **Checks to make by hand against Google**, read-only but for one comment: `read-doc` on a real
 document you have shared with the account, with `--title`; `comment-doc --list` on it; `comment-doc
 --add … --dry-run` on words in it; then one real `--add` and `--list` again to see it; `read-doc` on
-a document with a nested bullet list and a numbered list; `watch-doc` twice on a document, editing
+a document with a nested bullet list and a numbered list; `count-doc` and `check-typography` on a
+real document; `edit-doc --dry-run`, then `edit-doc` and `edit-doc --direct` on a scratch document,
+seeing the suggestions in Google Docs and accepting one; `check-doc-format` with the example format
+on a scratch document, then `--fix --dry-run`, `--fix`, and the check again; `watch-doc` twice on a document, editing
 it between the two; `insert-picture --dry-run`, then for real, on a scratch document, from a file
 and from an address, then `replace-picture --list` and `--picture 1` on it, checking each time that
 the uploaded copy is in the folder and no longer shared. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
@@ -484,6 +550,14 @@ are still to come.
   not edit footnotes, headers or footers. Whether Google puts a suggested insertion before or after
   the words it replaces is Google's affair; the command checks only that the new words are there.
 - A picture's height is left to Google, which keeps the picture's own proportions.
+- `count-doc` counts the body only, not footnotes, headers or footers, so a document with notes
+  counts lower than `check-manuscript`, which adds its notes.
+- `check-doc-format` reads list items' first-line indent as Google holds it, which is where a
+  bullet stands; it does not read a list's own indents. It does not check headers, footers or
+  footnotes, or text inside tables against a part of its own (they are body text).
+- `check-typography` and `edit-doc` read the document with pending suggestions inline: a
+  straight quote in a suggested deletion is still listed, and `edit-doc` refuses to touch text in
+  a pending suggestion.
 
 ## Notes for users
 
@@ -504,6 +578,8 @@ are still to come.
 - 16 November 2026: new command, `check-typography`, and the setting `TYPOGRAPHY_CHECKS`.
 - 16 November 2026: new command, `edit-doc`, the first here that changes a document's words, always
   exactly as its edits file says.
+- 16 November 2026: new command, `check-doc-format`, with `check-doc-format.example.json`. Exit
+  code 1 is now used, by it and by `check-typography`, for "something does not match".
 
 ## Contributing
 

@@ -1,0 +1,11 @@
+{
+  "page": {"size": "letter", "margins_inches": 1},
+  "body": {"font": "Times New Roman", "size": 12, "line_spacing": 2, "first_line_indent_inches": 0.5},
+  "list": {"font": "Times New Roman", "size": 12, "line_spacing": 2, "first_line_indent_inches": 0},
+  "title": {"font": "Times New Roman", "size": 24, "bold": true, "alignment": "centre"},
+  "heading_2": {"font": "Times New Roman", "size": 16, "bold": true, "colour": "#000000",
+                "alignment": "centre", "page_break_before": true, "keep_with_next": true,
+                "pattern": "^Chapter \\d+: "},
+  "heading_3": {"font": "Times New Roman", "size": 14, "bold": true, "colour": "#000000",
+                "keep_with_next": true}
+}

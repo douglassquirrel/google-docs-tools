@@ -60,7 +60,7 @@ def w_paragraphs(*texts):
 
 def _spec_text(spec):
     """The text of a paragraph given for described(), worked out here on its own terms."""
-    if isinstance(spec, (Styled, RuleThen, Listed)):
+    if isinstance(spec, (Styled, RuleThen, Listed, Para)):
         spec = spec.runs
     if spec is RULE:
         return ""
@@ -117,11 +117,17 @@ class FakeGoogle:
         """A Google Doc held piece by piece: paragraphs of (text, style) runs, or plain strings."""
         characters = []
         for runs in paragraphs:
+            held = {}  # what the paragraph's end holds: its paragraph style and bullet, if given
+            if isinstance(runs, Para):
+                held["paragraph"] = dict(runs.style)
+                if runs.bullet:
+                    held["bullet"] = dict(runs.bullet)
+                runs = runs.runs
             if isinstance(runs, str):
                 runs = [(runs, {})]
             for text, style in runs:
                 characters.extend([character, dict(style)] for character in text)
-            characters.append(["\n", dict(runs[-1][1])])
+            characters.append(["\n", dict(runs[-1][1], **held)])
         self.add(file_id, name, DOC, parents)
         self.files[file_id]["characters"] = characters
         self.files[file_id]["revision"] = revision
@@ -178,6 +184,15 @@ class FakeGoogle:
             else:
                 runs.append((character, dict(style)))
         return paragraphs
+
+    def structured(self, file_id, mode="SUGGESTIONS_INLINE"):
+        """The document read back for described(): each paragraph as paragraphs() gives it, as a
+        Para where its end holds a paragraph style or a bullet."""
+        ends = [style for character, style in _viewed_runs(self.files[file_id]["characters"], mode)
+                if character == "\n"]
+        return [Para(runs or [("", {})], end.get("paragraph"), end.get("bullet"))
+                if "paragraph" in end or "bullet" in end else runs
+                for runs, end in zip(self.paragraphs(file_id, mode), ends)]
 
     def alignments(self, file_id):
         """Each paragraph's alignment, in order; None where none was ever set."""
@@ -373,12 +388,18 @@ class FakeGoogle:
             answer = described([_viewed(spec, mode) for spec in entry["described"]])
             answer["documentId"] = doc_id
             answer["title"] = entry["name"]
+            for key in ("documentStyle", "namedStyles"):
+                if key in entry:
+                    answer[key] = copy.deepcopy(entry[key])
             return 200, answer
         if "characters" not in entry:
             raise AssertionError("this stand-in document was not added piece by piece")
-        answer = described(self.paragraphs(doc_id, mode), entry["revision"])
+        answer = described(self.structured(doc_id, mode), entry["revision"])
         answer["documentId"] = doc_id
         answer["title"] = entry["name"]
+        for key in ("documentStyle", "namedStyles"):
+            if key in entry:
+                answer[key] = copy.deepcopy(entry[key])
         if self.edited_after_reading and self.edits_left != 0:
             # Someone types into the document between the tool reading it and writing to it.
             if self.edits_left is not None:
@@ -423,6 +444,7 @@ class FakeGoogle:
         if mode not in ("EDIT", "SUGGEST"):
             return refuse("Invalid value at 'write_control.write_mode' (%s)" % mode)
         suggestion = "suggest.%d" % (len(self.calls))  # one id for the whole change
+        page = copy.deepcopy(entry.get("documentStyle", {}))
 
         def place(index):
             """The list position of a document index, or None if it is not a real position."""
@@ -533,9 +555,19 @@ class FakeGoogle:
                             style[field] = wanted["textStyle"][field]
                         else:
                             style.pop(field, None)
+            elif kind == "updateDocumentStyle":
+                if not wanted.get("fields"):
+                    return refuse("Invalid requests[%d].updateDocumentStyle: fields" % number)
+                for field in wanted["fields"].split(","):
+                    if field in wanted["documentStyle"]:
+                        page[field] = copy.deepcopy(wanted["documentStyle"][field])
+                    else:
+                        page.pop(field, None)
             else:
                 raise AssertionError("the stand-in does not know the request %r" % kind)
         entry["characters"] = characters
+        if page or "documentStyle" in entry:
+            entry["documentStyle"] = page
         entry["revision"] = "revision-%d" % (int(entry["revision"].rsplit("-", 1)[1]) + 1)
         return 200, {"documentId": doc_id, "replies": [{} for _ in body["requests"]],
                      "writeControl": {"requiredRevisionId": entry["revision"]}}
@@ -653,7 +685,7 @@ def _viewed(spec, mode):
     """A paragraph given for described(), as a view mode shows it."""
     if isinstance(spec, str) or spec is RULE:
         return spec
-    if isinstance(spec, (Styled, Listed, RuleThen)):
+    if isinstance(spec, (Styled, Listed, RuleThen, Para)):
         copied = copy.copy(spec)
         copied.runs = _viewed(spec.runs, mode)
         return copied
@@ -688,6 +720,15 @@ class Listed:
     def __init__(self, runs, list_id="list-1", level=0, numbered=False, start=None):
         self.runs, self.list_id, self.level = runs, list_id, level
         self.numbered, self.start = numbered, start
+
+
+class Para:
+    """A paragraph for described() with its whole paragraph style as Google gives it (its kind as
+    namedStyleType, NORMAL_TEXT if not said) and, for a list item, its bullet:
+    Para("Text", {"namedStyleType": "HEADING_2", "pageBreakBefore": True}, {"listId": "l"})."""
+
+    def __init__(self, runs, style=None, bullet=None):
+        self.runs, self.style, self.bullet = runs, dict(style or {}), bullet
 
 
 RULE = object()  # a horizontal rule, as a paragraph for described()
@@ -726,6 +767,15 @@ def described(paragraphs, revision="revision-1"):
                 levels[runs.level] = {"glyphType": "DECIMAL", "glyphFormat": "%%%d." % runs.level}
                 if runs.start is not None:
                     levels[runs.level]["startNumber"] = runs.start
+            runs = runs.runs
+        extra = {}
+        if isinstance(runs, Para):
+            extra = dict(runs.style)
+            kind = extra.pop("namedStyleType", "NORMAL_TEXT")
+            if runs.bullet:
+                bullet = dict(runs.bullet)
+                lists.setdefault(bullet["listId"], {"listProperties": {"nestingLevels": [
+                    {"glyphSymbol": "\u25cf"} for _ in range(9)]}})
             runs = runs.runs
         if isinstance(runs, Styled):
             kind, alignment, runs = runs.kind, runs.alignment, runs.runs
@@ -787,6 +837,7 @@ def described(paragraphs, revision="revision-1"):
         style = {"namedStyleType": kind}
         if alignment:
             style["alignment"] = alignment
+        style.update(extra)
         paragraph = {"elements": elements, "paragraphStyle": style}
         if bullet:
             paragraph["bullet"] = bullet
