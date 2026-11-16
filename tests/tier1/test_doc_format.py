@@ -261,3 +261,78 @@ def test_the_example_format_file_in_the_checkout_reads_as_it_stands():
     assert example["body"] == {"font": "Times New Roman", "size": 12, "line_spacing": 2,
                                "first_line_indent_inches": 0.5}
     assert example["heading_2"]["pattern"] == "^Chapter \\d+: "
+
+
+TITLE_PAGE = [
+    Para([("The Invented Book", {"fontSize": dim(28), "bold": True})],
+         {"namedStyleType": "TITLE", "alignment": "CENTER"}),
+    Para([("A subtitle", {"bold": True, "italic": True})], {"alignment": "CENTER"}),
+    Para("Contents", {"indentFirstLine": dim(0)}),
+    Para("Chapter 1: The start", {"indentFirstLine": dim(0), "indentStart": dim(36)}),
+]
+
+
+def test_start_at_leaves_the_front_matter_unchecked_and_unfixed_and_says_how_much():
+    paragraphs = TITLE_PAGE + clean() + [[("Pasted.", {"weightedFontFamily": {
+        "fontFamily": "Arial"}})]]
+    fmt = dict(FORMAT, start_at="heading_2", title={"size": 24})
+    checked = check(document(paragraphs), parse_format(json.dumps(fmt)))
+    assert [(p.group, p.beginning) for p in checked.problems] == [
+        ("body text: font not Times New Roman", "Pasted.")]
+    assert [fix.beginning for fix in checked.fixes] == ["Pasted."]
+    assert report(checked).splitlines()[-2:] == [
+        "Left out: 4 paragraphs before the first heading 2.",
+        "Format: 1 problem in 1 paragraph."]
+
+
+def test_start_at_still_checks_the_page():
+    fmt = dict(FORMAT, start_at="heading_2")
+    checked = check(document(TITLE_PAGE + clean(), dict(PAGE, marginLeft=dim(90))),
+                    parse_format(json.dumps(fmt)))
+    assert [p.group for p in checked.problems] == ["page: margins not 1 in"]
+
+
+def test_start_at_with_no_such_heading_leaves_nothing_out_and_says_so():
+    fmt = dict(FORMAT, start_at="heading_1")
+    checked = check(document(clean()), parse_format(json.dumps(fmt)))
+    assert report(checked) == ("Left out: nothing; the document has no heading 1.\n"
+                               "Format: everything matches.\n")
+
+
+def test_a_clean_document_from_its_start_says_what_it_left_out_too():
+    fmt = dict(FORMAT, start_at="heading_2")
+    checked = check(document(TITLE_PAGE + clean()), parse_format(json.dumps(fmt)))
+    assert report(checked) == ("Left out: 4 paragraphs before the first heading 2.\n"
+                               "Format: everything matches.\n")
+
+
+def test_empty_paragraphs_are_never_checked_or_fixed_whatever_they_set():
+    paragraphs = clean() + [
+        Para("", {"indentFirstLine": dim(0), "lineSpacing": 100}),
+        Para("   ", {"indentFirstLine": dim(0)}),
+        Para("", H2),
+        Para("", {"namedStyleType": "HEADING_4"}),
+    ]
+    checked = check(document(paragraphs), parse_format(json.dumps(FORMAT)))
+    assert (checked.problems, checked.fixes) == ([], [])
+
+
+@pytest.mark.parametrize("value", ["heading_7", "body", "page", 2, None])
+def test_start_at_must_name_the_title_or_a_heading_level(value):
+    with pytest.raises(FormatError) as raised:
+        parse_format(json.dumps(dict(FORMAT, start_at=value)))
+    assert any('"start_at" must be title or heading_1 to heading_6' in problem
+               for problem in raised.value.problems), raised.value.problems
+
+
+def test_start_at_alone_names_nothing_to_check():
+    with pytest.raises(FormatError) as raised:
+        parse_format(json.dumps({"start_at": "heading_2"}))
+    assert raised.value.problems == ["the file names nothing to check"]
+
+
+def test_start_at_on_the_first_paragraph_leaves_out_none_and_says_it_was_found():
+    fmt = dict(FORMAT, start_at="heading_2")
+    checked = check(document(clean()), parse_format(json.dumps(fmt)))
+    assert report(checked) == ("Left out: 0 paragraphs before the first heading 2.\n"
+                               "Format: everything matches.\n")

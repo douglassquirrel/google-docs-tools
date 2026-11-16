@@ -213,3 +213,33 @@ def test_an_error_from_google_on_reading_is_exit_4_with_its_words(doc_format, fa
     result = doc_format()
     assert result.code == 4 and "reading the document" in result.err and "Backend Error" in (
         result.err)
+
+
+def test_fix_from_the_first_chapter_leaves_the_front_matter_and_empty_paragraphs_alone(
+        doc_format, fake):
+    from tests.tier1.test_doc_format import FORMAT, TITLE_PAGE
+
+    doc_format.file.write_text(json.dumps(dict(FORMAT, start_at="heading_2")), encoding="utf-8")
+    doc_format.document(TITLE_PAGE + [
+        Para("Chapter 1: The start", H2), Para("", {"indentFirstLine": dim(0)}),
+        Para("Chapter 2: The middle", H2), "Body text.",
+        Para([("Pasted from the web.", ARIAL)])])
+    before = fake.structured(DOC_ID)[:6]
+    result = doc_format("--fix")
+    assert (result.code, result.err) == (0, "")
+    assert result.out == (
+        "body text: font not Times New Roman: 1 paragraph\n"
+        '  under "## Chapter 2: The middle": Pasted from the web.\n'
+        "body text: size not 12 pt: 1 paragraph\n"
+        '  under "## Chapter 2: The middle": Pasted from the web.\n'
+        "Left out: 4 paragraphs before the first heading 2.\n"
+        "Format: 2 problems in 1 paragraph.\n"
+        "Set:\n"
+        '  under "## Chapter 2: The middle": Pasted from the web.: font Times New Roman, '
+        "size 12 pt\n"
+        "After the fix:\n"
+        "Left out: 4 paragraphs before the first heading 2.\n"
+        "Format: everything matches.\n")
+    after = fake.structured(DOC_ID)
+    assert [(p.runs, p.style) if isinstance(p, Para) else p for p in after[:6]] == [
+        (p.runs, p.style) if isinstance(p, Para) else p for p in before]

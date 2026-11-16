@@ -15,7 +15,9 @@ from googledocstools.notes import beginning
 
 Problem = namedtuple("Problem", "group place beginning paragraph")  # paragraph: its start, or None
 Fix = namedtuple("Fix", "place beginning said requests")
-Checked = namedtuple("Checked", "problems fixes")
+# left_out: how many paragraphs before start_at were left out (None with no start_at, or when the
+# document has no paragraph of that kind)
+Checked = namedtuple("Checked", "problems fixes left_out start_at", defaults=(None, None))
 
 HEADINGS = ("title",) + tuple("heading_%d" % level for level in range(1, 7))
 TEXT_KEYS = ("font", "size", "line_spacing", "first_line_indent_inches")
@@ -86,10 +88,15 @@ def parse_format(text):
         raise FormatError(["not JSON: %s" % error])
     if not isinstance(data, dict):
         raise FormatError(["the file must hold a JSON object, {\"body\": {...}, ...}"])
-    if not data:
+    if not set(data) - {"start_at"}:
         raise FormatError(["the file names nothing to check"])
     problems = []
+    if "start_at" in data and data["start_at"] not in HEADINGS:
+        problems.append('"start_at" must be title or heading_1 to heading_6: the first paragraph '
+                        "of that kind, before which nothing is checked")
     for part, wanted in data.items():
+        if part == "start_at":
+            continue
         if part not in PARTS:
             problems.append('unknown part "%s"; the parts are %s' % (part, ", ".join(PARTS)))
             continue
@@ -258,7 +265,7 @@ def _paragraph(styles, structural, part, wanted, place, first_words, body_size):
                                 structural["startIndex"]))
 
     for key, field, read, default, sent, saying, matches in TEXT_SETTINGS:
-        if key not in wanted or not text.strip():
+        if key not in wanted:
             continue
         if not all(matches(styles.value(kind, "textStyle", run.get("textStyle", {}), read,
                                         default), wanted[key]) for run in runs):
@@ -303,14 +310,20 @@ def check(described, fmt):
     names_headings = any(name in fmt for name in HEADINGS)
     body_size = fmt.get("body", {}).get("size")
     heading, before = None, None
-    for structural in _paragraphs_in(described["body"]["content"]):
+    start_at = fmt.get("start_at")
+    all_paragraphs = list(_paragraphs_in(described["body"]["content"]))
+    first = next((number for number, structural in enumerate(all_paragraphs)
+                  if _part(structural["paragraph"]) == start_at and _text(structural).strip()),
+                 None) if start_at else None
+    for number, structural in enumerate(all_paragraphs):
         paragraph = structural["paragraph"]
-        text = "".join(element.get("textRun", {}).get("content", "")
-                       for element in paragraph["elements"]).rstrip("\n")
+        text = _text(structural)
         part = _part(paragraph)
         place = ('under "%s"' % heading if heading else
                  'after "%s"' % beginning(before) if before else "at the start")
-        if part in HEADINGS and part not in fmt and names_headings:
+        if (first is not None and number < first) or not text.strip():
+            pass  # the front matter, or a paragraph with nothing in it to format
+        elif part in HEADINGS and part not in fmt and names_headings:
             problems.append(Problem("%s: a level the format does not name" % SHOWN_PART[part],
                                     place, beginning(text), structural["startIndex"]))
         elif part in fmt:
@@ -323,7 +336,13 @@ def check(described, fmt):
                 level = 1 if part == "title" else int(part[len("heading_"):])
                 heading = "#" * level + " " + beginning(text)
             before = text
-    return Checked(problems, fixes)
+    return Checked(problems, fixes, first, start_at)
+
+
+def _text(structural):
+    """A paragraph's text, without its line break."""
+    return "".join(element.get("textRun", {}).get("content", "")
+                   for element in structural["paragraph"]["elements"]).rstrip("\n")
 
 
 def _counted(number, noun):
@@ -345,6 +364,11 @@ def report(checked, verbose=False, shown=3):
         lines += ["  %s: %s" % (one.place, one.beginning) for one in listed]
         if len(found) > len(listed):
             lines.append("  … and %d more (-v shows them all)" % (len(found) - len(listed)))
+    if checked.start_at:
+        named = SHOWN_PART[checked.start_at]
+        lines.append("Left out: %s before the first %s." % (
+            _counted(checked.left_out, "paragraph"), named) if checked.left_out is not None else
+            "Left out: nothing; the document has no %s." % named)
     if not checked.problems:
         lines.append("Format: everything matches.")
     else:

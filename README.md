@@ -405,8 +405,10 @@ that does not match, with where it is and its first words (three of each kind un
 heading at a level the format does not name; a heading that does not match its pattern; and normal
 text that looks like a heading (all bold, or 2 points or more above the body's size, in 15 words or
 fewer). What a paragraph has is what it sets itself, else what its named style sets in the
-document, else Google's default (Arial 11, single spacing). Paragraphs with no text are not checked
-for font, size, bold or colour. The check only reads.
+document, else Google's default (Arial 11, single spacing). A paragraph with no text, or only spaces,
+is never checked or fixed. With `"start_at": "heading_2"` in the format file, everything before the
+first heading 2 (a book's title page and contents, laid out by hand) is left alone too, and the
+report says how many paragraphs that was; the page is still checked. The check only reads.
 
 With `--fix`, it sets every font, size, bold, colour, alignment, line spacing, first-line indent,
 page break, keep-with-next, page size and margin that does not match, in one change made only if the
@@ -420,6 +422,7 @@ The format file, every part optional (`check-doc-format.example.json` in this fo
 
 ```json
 {
+  "start_at": "heading_2",
   "page": {"size": "letter", "margins_inches": 1},
   "body": {"font": "Times New Roman", "size": 12, "line_spacing": 2, "first_line_indent_inches": 0.5},
   "list": {"font": "Times New Roman", "size": 12, "line_spacing": 2, "first_line_indent_inches": 0},
@@ -431,6 +434,7 @@ The format file, every part optional (`check-doc-format.example.json` in this fo
 
 | Part | Settings |
 |---|---|
+| `start_at` | `title` or `heading_1` to `heading_6`: check and fix nothing before the first paragraph of that kind. Not a part, a setting of the whole file. |
 | `page` | `size`: `letter`, `a4` or `[width, height]` in inches; `margins_inches`: one number for all four. |
 | `body` (normal text), `list` (list items) | `font`, `size` (points), `line_spacing` (a multiple of single: 2 is double), `first_line_indent_inches`. |
 | `title`, `heading_1` to `heading_6` | `font`, `size`, `bold`, `colour` (`#rrggbb`), `alignment` (`left`, `centre`, `right`, `justified`), `page_break_before`, `keep_with_next`, `pattern` (a regular expression the heading's text must match). |
@@ -440,6 +444,7 @@ The format file, every part optional (`check-doc-format.example.json` in this fo
       under "## Chapter 1: The start": Pasted from the web.
     list items: first-line indent not 0 in: 1 paragraph
       under "## Chapter 1: The start": An indented item.
+    Left out: 4 paragraphs before the first heading 2.
     Format: 2 problems in 2 paragraphs.
 
 | Flag | Meaning |
@@ -586,6 +591,9 @@ are still to come.
   exactly as its edits file says.
 - 16 November 2026: new command, `check-doc-format`, with `check-doc-format.example.json`. Exit
   code 1 is now used, by it and by `check-typography`, for "something does not match".
+- 16 November 2026: `check-doc-format` no longer checks or fixes a paragraph with no text, and takes
+  `"start_at": "heading_2"` (or any heading level, or `title`) in the format file to leave a book's
+  front matter alone. A format file without it checks everything, as before, but empty paragraphs.
 
 ## Contributing
 
