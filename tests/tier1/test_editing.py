@@ -134,3 +134,19 @@ def test_an_edit_is_found_in_a_table_cell_in_its_place():
         "tableRows": [{"tableCells": [{"content": [cell]}]}]}})
     found = locate(document, [edit("cell text", "cell words")])
     assert (found[0].start, found[0].old, found[0].new) == (25, "text", "words")
+
+
+def test_words_already_under_a_suggestion_are_said_to_be_so_not_missing():
+    # As seen at Google on 16 November 2026: a suggested insertion stands just before the
+    # words it would replace, which stay, marked for deletion.
+    document = described([[("Chestnut ", {}), ("–", {INSERTED: ["s1"]}), ("-", {DELETED: ["s1"]}),
+                           (" one", {})]])
+    for find in ("Chestnut - one", "Chestnut – one"):
+        with pytest.raises(EditProblems) as raised:
+            locate(document, [edit(find, "x")])
+        assert raised.value.problems == [
+            'edit 1: "%s" touches text in a pending suggestion; accept or reject it first' % find]
+    later = described([[("pending", {INSERTED: ["s2"]})], "Chestnut and more."])
+    with pytest.raises(EditProblems) as raised:
+        locate(later, [edit("missing words", "x")])
+    assert "is not in the document" in raised.value.problems[0]

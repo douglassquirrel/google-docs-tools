@@ -14,7 +14,7 @@ AROUND_WORDS = 3  # words shown on each side of an edit in its report
 AROUND_CHECK = 15  # characters on each side looked for with an edit's new words afterwards
 TOKEN = re.compile(r"\s+|\S+")
 
-Character = namedtuple("Character", "index text suggested")
+Character = namedtuple("Character", "index text suggested inserted", defaults=(False,))
 Located = namedtuple("Located", "edit start old new found_start found_end shown_before "
                      "shown_after check_before check_after")
 
@@ -58,12 +58,12 @@ def stretches(described):
                     found.append(stretch)
                     stretch = []
                     continue
-                suggested = bool(run.get("suggestedInsertionIds") or
-                                 run.get("suggestedDeletionIds"))
+                inserted = bool(run.get("suggestedInsertionIds"))
+                suggested = inserted or bool(run.get("suggestedDeletionIds"))
                 at = element["startIndex"]
                 for character in run.get("content", ""):
                     if character != "\n":
-                        stretch.append(Character(at, character, suggested))
+                        stretch.append(Character(at, character, suggested, inserted))
                     at += units(character)
             found.append(stretch)
 
@@ -107,6 +107,20 @@ def _place(stretch, at, edit):
         _plain_edge(stretch[:first], True), _plain_edge(stretch[last:], False))
 
 
+def _under_a_suggestion(texts, find):
+    """Whether the words are in the document as it would read with its suggestions accepted, or
+    with them rejected: they are there, but a suggestion runs through them."""
+    for stretch in texts:
+        if not any(character.suggested for character in stretch):
+            continue
+        accepted = "".join(character.text for character in stretch
+                           if character.inserted or not character.suggested)
+        rejected = "".join(character.text for character in stretch if not character.inserted)
+        if find in accepted or find in rejected:
+            return True
+    return False
+
+
 def locate(described, edits):
     """Each edit placed in the document, in the order given; EditProblems naming every edit that
     is not there, there more than once without an occurrence, beyond its occurrence, touching a
@@ -121,6 +135,10 @@ def locate(described, edits):
             while at >= 0:
                 matches.append((stretch, at))
                 at = text.find(edit.find, at + len(edit.find))
+        if not matches and _under_a_suggestion(texts, edit.find):
+            problems.append('%s: "%s" touches text in a pending suggestion; accept or reject it '
+                            "first" % (edit.name, edit.find))
+            continue
         if not matches:
             problems.append('%s: "%s" is not in the document (an edit cannot run across a '
                             "paragraph break, a footnote mark, a chip or a picture)"
