@@ -419,6 +419,10 @@ class FakeGoogle:
             return refuse("The required revision ID '%s' does not match the latest revision."
                           % required)
         characters = [[character, dict(style)] for character, style in entry["characters"]]
+        mode = body.get("writeControl", {}).get("writeMode", "EDIT")
+        if mode not in ("EDIT", "SUGGEST"):
+            return refuse("Invalid value at 'write_control.write_mode' (%s)" % mode)
+        suggestion = "suggest.%d" % (len(self.calls))  # one id for the whole change
 
         def place(index):
             """The list position of a document index, or None if it is not a real position."""
@@ -439,8 +443,14 @@ class FakeGoogle:
                     return refuse("Invalid requests[%d].deleteContentRange: bad range" % number)
                 if any(character == "\n" for character, _ in characters[first:last]):
                     raise AssertionError("the tools never delete a paragraph's end")
-                removed[first] = dict(characters[first][1])
-                del characters[first:last]
+                removed[first] = {key: value for key, value in characters[first][1].items()
+                                  if key not in (INSERTED, DELETED)}
+                if mode == "SUGGEST":
+                    # Believed from the reference: text suggested for deletion stays, marked.
+                    for _, style in characters[first:last]:
+                        style[DELETED] = [suggestion]
+                else:
+                    del characters[first:last]
             elif kind == "insertText":
                 position = place(wanted["location"]["index"])
                 if position is None or position >= len(characters):
@@ -460,6 +470,10 @@ class FakeGoogle:
                 ending = next(style for character, style in characters[position:]
                               if character == "\n")
                 added = []
+                look.pop(INSERTED, None)
+                look.pop(DELETED, None)
+                if mode == "SUGGEST":
+                    look[INSERTED] = [suggestion]
                 for character in wanted["text"]:
                     style = dict(look)
                     if character == "\n" and "paragraph" in ending:

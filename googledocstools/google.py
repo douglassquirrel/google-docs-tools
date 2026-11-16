@@ -210,11 +210,15 @@ class Google:
         return self._call("GET", "%s/documents/%s" % (DOCS, quote(document_id, safe="")),
                           {"suggestionsViewMode": view} if view else None)
 
-    def change_document(self, document_id, requests, revision):
-        """Apply requests to a document, all or none, and only if it is still at this revision."""
+    def change_document(self, document_id, requests, revision, suggest=False):
+        """Apply requests to a document, all or none, and only if it is still at this revision;
+        with suggest, as suggestions for its editors to accept or reject."""
+        control = {"requiredRevisionId": revision}
+        if suggest:
+            control["writeMode"] = "SUGGEST"
         return self._call(
             "POST", "%s/documents/%s:batchUpdate" % (DOCS, quote(document_id, safe="")),
-            body={"requests": requests, "writeControl": {"requiredRevisionId": revision}},
+            body={"requests": requests, "writeControl": control},
         )
 
     def replace_text(self, document_id, find, replacement):

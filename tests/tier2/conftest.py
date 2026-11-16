@@ -357,3 +357,28 @@ def typography(fake, env, tmp_path, capsys):
     run = command_runner(check_typography, fake, env, capsys, default_settings=settings)
     run.settings = settings
     return run
+
+
+@pytest.fixture
+def edit(fake, env, tmp_path, capsys):
+    """Run edit-doc against a document held piece by piece, with an edits file of its own."""
+    import json
+
+    from googledocstools import edit_doc
+
+    fake.add_document(DOC_ID, DOC_NAME, ["root"], [
+        "The quick fox jumps.",
+        [("A ", {}), ("bold", {"bold": True}), (" word here.", {})],
+    ])
+    edits = tmp_path / "edits for chapter 1.json"
+    run = command_runner(edit_doc, fake, env, capsys, first=[str(edits)])
+
+    def write(listed):
+        edits.write_text(json.dumps(listed, ensure_ascii=False), encoding="utf-8")
+
+    write([{"id": "E1", "find": "quick", "replace": "slow"},
+           {"find": "bold word", "replace": "strong word"}])
+    run.edits = edits
+    run.write = write
+    run.document = lambda paragraphs: fake.add_document(DOC_ID, DOC_NAME, ["root"], paragraphs)
+    return run

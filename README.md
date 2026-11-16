@@ -1,14 +1,17 @@
 # google-docs-tools
 
 Small command-line programs for working on a Google Doc with an AI assistant: read the document
-as text, put comments in it or list them, look at what has changed since the last look, and put a
-picture in, from a file or an address, or in place of one already there. For Squirrel's book projects (`wrangling-ai`,
-`beyond-ai`), whose drafts live in Google Docs, and for any other project that needs the same.
-Each command takes the document by its id or address, keeps everything particular to one project
-in a settings file or on the command line, and never changes the document's words. What changes
-anything at Google is listed, and nothing else does: adding a comment; putting a picture in, or in
-place of another; and, for a picture from a file, uploading it into a named Drive folder and
-sharing that one copy with anyone only while Google fetches it, then taking the sharing back.
+as text, count its words by chapter, check its quotes, dashes and format, put comments in it or list
+them, look at what has changed since the last look, make a list of edits in it as suggestions, set
+its format, and put a picture in, from a file or an address, or in place of one already there. For
+Squirrel's book projects (`wrangling-ai`, `beyond-ai`), whose drafts live in Google Docs, and for any
+other project that needs the same. Each command takes the document by its id or address and keeps
+everything particular to one project in a settings file or on the command line. A command changes a
+document only as the person running it has written out exactly (the words to find and what they
+become, the format to set), never with words of its own; what changes anything at Google is listed,
+and nothing else does: those edits and that format; adding a comment; putting a picture in, or in
+place of another; and, for a picture from a file, uploading it into a named Drive folder and sharing
+that one copy with anyone only while Google fetches it, then taking the sharing back.
 Nothing is ever deleted or binned. The Google layer came from
 [online-publishing-tools](https://github.com/douglassquirrel/online-publishing-tools) on
 1 November 2026, copied and made general; that repository keeps its own.
@@ -22,6 +25,7 @@ Nothing is ever deleted or binned. The Google layer came from
 | `replace-picture` | List the pictures, or put a new picture in place of one, keeping its link, width and caption. |
 | `count-doc` | The words in each chapter (or part) of a document, and the total, counted as word-tools' `check-manuscript` counts. Reads only. |
 | `check-typography` | List straight quotes and apostrophes, double hyphens and spaced hyphens, with the curly quote or en dash each should be. Reads only. |
+| `edit-doc` | Make a list of find → replace edits in a document, as suggestions to accept or reject, or outright. The list has the shape of word-tools' `propose-edits` list. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
 ## Requirements
@@ -343,6 +347,52 @@ changes, give them to `edit-doc`.
 
 Exit code 0 when there is nothing to fix and 1 when there is something.
 
+### `edit-doc`: a list of edits, as suggestions
+
+    edit-doc DOC EDITS.json [--direct] [--dry-run] [--timeout SECONDS]
+
+Makes each edit in the list as a Google Docs suggestion, for the document's editors to accept or
+reject, or outright with `--direct`. The list has the shape of word-tools' `propose-edits` list, so
+one list serves a Word file and a Google Doc:
+
+```json
+[
+  {"id": "E1", "find": "the quick fox", "replace": "the slow fox", "why": "plainer"},
+  {"find": "one and one", "replace": "one", "occurrence": 2},
+  {"find": "a {put an example here} b", "replace": "a b"}
+]
+```
+
+`find` is exact text within one paragraph, found even across bold, italic or linked pieces;
+`replace` is what it becomes (empty to delete; to put words in, give the words on either side in
+both). `occurrence` picks the Nth match, in the document's order, where there are several; `id`
+names the edit in the report (`edit N` otherwise); `why` is for the person reading the list; `where`
+may be given, as `body` only. Only the words that change are changed: the words `find` and
+`replace` share at their start and end are left alone, so a one-word change marks one word, and the
+new words take the look of the old.
+
+The whole list is checked before anything is changed, and nothing is changed if any edit cannot be
+made: a `find` not in the document, in it more than once with no `occurrence`, `occurrence` beyond
+the last, touching text in a pending suggestion, running across a paragraph break, a footnote mark,
+a chip or a picture, or overlapping another edit. The edits go to Google in one change, all or
+nothing, made only if the document is as it was when read; if someone changed it meanwhile, nothing
+is changed and you run the command again. Afterwards the command reads the document again, as it
+would be with the suggestions accepted, and checks each edit's new words are there.
+
+    $ edit-doc DOC edits.json
+    E1 | The [quick → slow] fox jumps. | suggested
+    edit 2 | A [bold → strong] word here. | suggested
+    2 edits suggested; each is in the document.
+
+| Flag | Meaning |
+|---|---|
+| `--direct` | Make the edits outright, not as suggestions. |
+| `--dry-run` | Check every edit and say where it would go (`would be suggested`); change nothing. |
+| `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
+To make the fixes `check-typography` proposes, give each as an edit: `{"find": "We don't want",
+"replace": "We don’t want"}`.
+
 ### `google-sign-in`: the one-time sign-in
 
     google-sign-in --account EMAIL --env-file FILE [--port N] [--timeout SECONDS] [--dry-run]
@@ -430,8 +480,9 @@ are still to come.
   each look is compared with the one before.
 - A comment goes on words that are in the document exactly once, within one paragraph; Google
   shows it under All comments rather than anchored on the words.
-- Nothing here changes a document's words. Filling in text or making links, which
-  `online-publishing-tools` does for the weekly email, is not here until a project asks for it.
+- `edit-doc` changes only what the caller writes out exactly: it never makes up words, and it does
+  not edit footnotes, headers or footers. Whether Google puts a suggested insertion before or after
+  the words it replaces is Google's affair; the command checks only that the new words are there.
 - A picture's height is left to Google, which keeps the picture's own proportions.
 
 ## Notes for users
@@ -451,6 +502,8 @@ are still to come.
 
 - 16 November 2026: new command, `count-doc`.
 - 16 November 2026: new command, `check-typography`, and the setting `TYPOGRAPHY_CHECKS`.
+- 16 November 2026: new command, `edit-doc`, the first here that changes a document's words, always
+  exactly as its edits file says.
 
 ## Contributing
 
