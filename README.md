@@ -530,7 +530,10 @@ on a scratch document, then `--fix --dry-run`, `--fix`, and the check again; `wa
 it between the two; `insert-picture --dry-run`, then for real, on a scratch document, from a file
 and from an address, then `replace-picture --list` and `--picture 1` on it, checking each time that
 the uploaded copy is in the folder and no longer shared. On 16 November 2026 `count-doc`, `check-typography` and `check-doc-format` (the check) ran on
-Google's public sample document, read-only. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+Google's public sample document, read-only; then, on a scratch document, `edit-doc` made a real
+suggestion (Google put the new words just before the struck ones, in the same bold) and a direct
+edit and its undoing, and `check-doc-format --fix` set a heading's bold and keep-with-next and set
+them back, each checking again with "everything matches". As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
 in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
 documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;

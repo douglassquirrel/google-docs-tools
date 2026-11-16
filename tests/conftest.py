@@ -474,7 +474,8 @@ class FakeGoogle:
                 removed[first] = {key: value for key, value in characters[first][1].items()
                                   if key not in (INSERTED, DELETED)}
                 if mode == "SUGGEST":
-                    # Believed from the reference: text suggested for deletion stays, marked.
+                    # As seen at Google on 16 November 2026: text suggested for deletion stays,
+                    # marked, and a suggested insertion at its start stands just before it.
                     for _, style in characters[first:last]:
                         style[DELETED] = [suggestion]
                 else:
