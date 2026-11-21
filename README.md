@@ -599,7 +599,11 @@ the uploaded copy is in the folder and no longer shared. On 16 November 2026 `co
 Google's public sample document, read-only; then, on a scratch document, `edit-doc` made a real
 suggestion (Google put the new words just before the struck ones, in the same bold) and a direct
 edit and its undoing, and `check-doc-format --fix` set a heading's bold and keep-with-next and set
-them back, each checking again with "everything matches". As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+them back, each checking again with "everything matches". On 21 November 2026 `insert-paragraphs`
+put a heading 3, three paragraphs and a three-item list into a scratch document as suggestions
+(Google takes the headings and bullets as part of the suggested text), and `read-doc` read them back
+exactly as written; `check-doc-format` reads suggestions inline, so it reports the new text's look
+before its suggested change until the suggestions are accepted. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
 in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
 documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;
