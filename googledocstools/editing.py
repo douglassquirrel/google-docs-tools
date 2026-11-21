@@ -107,7 +107,7 @@ def _place(stretch, at, edit):
         _plain_edge(stretch[:first], True), _plain_edge(stretch[last:], False))
 
 
-def _under_a_suggestion(texts, find):
+def under_a_suggestion(texts, find):
     """Whether the words are in the document as it would read with its suggestions accepted, or
     with them rejected: they are there, but a suggestion runs through them."""
     for stretch in texts:
@@ -135,7 +135,7 @@ def locate(described, edits):
             while at >= 0:
                 matches.append((stretch, at))
                 at = text.find(edit.find, at + len(edit.find))
-        if not matches and _under_a_suggestion(texts, edit.find):
+        if not matches and under_a_suggestion(texts, edit.find):
             problems.append('%s: "%s" touches text in a pending suggestion; accept or reject it '
                             "first" % (edit.name, edit.find))
             continue

@@ -405,3 +405,21 @@ def doc_format(fake, env, tmp_path, capsys):
     run.document = document
     run.file = file
     return run
+
+
+@pytest.fixture
+def put(fake, env, tmp_path, capsys):
+    """Run insert-paragraphs against a document held piece by piece (a heading 2, a paragraph
+    under it and a last one), with a file of new paragraphs of its own."""
+    from googledocstools import insert_paragraphs
+    from tests.conftest import Para
+
+    content = tmp_path / "new paragraphs for chapter 1.md"
+    content.write_text("### A new heading\n\nA plain paragraph with an *italic* word.\n\n"
+                       "{A placeholder}\n\n- one\n- two\n", encoding="utf-8")
+    run = command_runner(insert_paragraphs, fake, env, capsys, first=[str(content)])
+    run.content = content
+    run.document = lambda paragraphs: fake.add_document(DOC_ID, DOC_NAME, ["root"], paragraphs)
+    run.document([Para("A heading", {"namedStyleType": "HEADING_2"}),
+                  "The first paragraph under it.", "The end."])
+    return run

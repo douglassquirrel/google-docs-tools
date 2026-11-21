@@ -2,14 +2,14 @@
 
 Small command-line programs for working on a Google Doc with an AI assistant: read the document
 as text, count its words by chapter, check its quotes, dashes and format, put comments in it or list
-them, look at what has changed since the last look, make a list of edits in it as suggestions, set
-its format, and put a picture in, from a file or an address, or in place of one already there. For
+them, look at what has changed since the last look, make a list of edits in it as suggestions, put
+new paragraphs (headings, text, bulleted lists) into it, set its format, and put a picture in, from a file or an address, or in place of one already there. For
 Squirrel's book projects (`wrangling-ai`, `beyond-ai`), whose drafts live in Google Docs, and for any
 other project that needs the same. Each command takes the document by its id or address and keeps
 everything particular to one project in a settings file or on the command line. A command changes a
 document only as the person running it has written out exactly (the words to find and what they
-become, the format to set), never with words of its own; what changes anything at Google is listed,
-and nothing else does: those edits and that format; adding a comment; putting a picture in, or in
+become, the new paragraphs, the format to set), never with words of its own; what changes anything
+at Google is listed, and nothing else does: those edits, those paragraphs and that format; adding a comment; putting a picture in, or in
 place of another; and, for a picture from a file, uploading it into a named Drive folder and sharing
 that one copy with anyone only while Google fetches it, then taking the sharing back.
 Nothing is ever deleted or binned. The Google layer came from
@@ -26,6 +26,7 @@ Nothing is ever deleted or binned. The Google layer came from
 | `count-doc` | The words in each chapter (or part) of a document, and the total, counted as word-tools' `check-manuscript` counts. Reads only. |
 | `check-typography` | List straight quotes and apostrophes, double hyphens and spaced hyphens, with the curly quote or en dash each should be. Reads only. |
 | `edit-doc` | Make a list of find → replace edits in a document, as suggestions to accept or reject, or outright. The list has the shape of word-tools' `propose-edits` list. |
+| `insert-paragraphs` | Put new paragraphs (headings, text, bulleted list items) written in a file into a document, after or before a given paragraph, as suggestions or outright. |
 | `check-doc-format` | Check a document against a house format (page, body text, list items, title and headings) and, with `--fix`, set it right, formatting only. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
@@ -396,6 +397,62 @@ would be with the suggestions accepted, and checks each edit's new words are the
 To make the fixes `check-typography` proposes, give each as an edit: `{"find": "We don't want",
 "replace": "We don’t want"}`.
 
+### `insert-paragraphs`: new paragraphs beside a given one
+
+    insert-paragraphs DOC CONTENT.md (--after WORDS | --before WORDS) [--direct] [--dry-run] [--timeout SECONDS]
+
+Puts the paragraphs written in `CONTENT.md` into the document after (or before) the paragraph that
+holds `WORDS`, as Google Docs suggestions for its editors to accept or reject, or outright with
+`--direct`. `WORDS` must be in the document exactly once, within one paragraph, outside a table and
+outside a pending suggestion, as for `comment-doc --on`. The file is in `read-doc`'s markup, so what
+`read-doc` prints can be fed back:
+
+```markdown
+### A heading three
+
+A plain paragraph with an *italic* word, which may go on
+over more than one line.
+
+{A placeholder: braces are plain text}
+
+- a bulleted item
+- another, **bold** in part, with [a link](https://example.org/)
+```
+
+`#` to `######` make a heading 1 to 6, `- ` a bulleted list item, anything else a plain paragraph;
+`**bold**`, `*italic*` and `[words](https://…)` work in any of them. A blank line ends a paragraph;
+a heading is one line, and a new heading or `- ` starts a new paragraph even without a blank line.
+Each new paragraph takes the document's own style for its kind (Normal text, Heading 3), not the
+look or the bullet of the paragraph beside it, so it matches the house format `check-doc-format`
+checks. Consecutive items make one list, with Google's plain bullets (disc, circle, square); items
+put in right after a list with the same bullets join it.
+
+Refused, changing nothing: a numbered or indented (nested) list item, a heading of seven `#`, a
+heading or item with no words, a character Google would drop, a mark left open, or new paragraphs
+that hold `WORDS` themselves (exit 2, every fault named with its line, before Google is asked);
+`WORDS` not there once, in a table or in a pending suggestion (exit 5). The paragraphs go to Google
+in one change, all or nothing, made only if the document is as it was when read; afterwards the
+command reads the document again, as it would be with the suggestions accepted, and checks each new
+paragraph stands there, in order, with its kind, its words and their look.
+
+    $ insert-paragraphs DOC "new paragraphs.md" --after "first paragraph"
+    Document: A draft for tests
+    After: The first paragraph under it.
+      1 | heading 3 | A new heading
+      2 | paragraph | A plain paragraph with an *italic* word.
+      3 | paragraph | {A placeholder}
+      4 | list item | one
+      5 | list item | two
+    5 new paragraphs suggested; each is in the document.
+
+| Flag | Meaning |
+|---|---|
+| `--after WORDS` | Put them after the paragraph holding these words. |
+| `--before WORDS` | Put them before it. One of the two is needed. |
+| `--direct` | Put them in outright, not as suggestions. |
+| `--dry-run` | Check everything and say where they would go (`would be suggested`); change nothing. |
+| `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
 ### `check-doc-format`: a document against its house format
 
     check-doc-format DOC --format FORMAT.json [--fix] [--dry-run] [-v] [--timeout SECONDS]
@@ -495,12 +552,14 @@ same command as the tool. A missing one stops the command with exit 3 and the li
 | 0 | Done (or, with `--dry-run`, checked). For `watch-doc`, the look worked, whether or not anything is new: the summary line says which. |
 | 1 | `check-typography`: something to fix. `check-doc-format`: something does not match the format (after the fix, with `--fix`). |
 | 2, for `edit-doc` and `check-doc-format` | Also: an edits or format file that cannot be read, is not JSON in UTF-8, or has faults; every fault is named. Nothing is contacted. |
+| 2, for `insert-paragraphs` | Also: a content file that cannot be read, is not UTF-8, or has faults (each named with its line), or holds the words of `--after` or `--before`; neither of those given, or words empty or with a line break. Nothing is contacted. |
 | 2 | Bad arguments or settings: a `DOC` that is not an id or an address, flags that do not go together, an address not in `COMMENT_RECIPIENTS`, an unreadable `--settings` file, an empty marker. For `watch-doc`, also a `--snapshot` file that is not its snapshot of this document, or no folder to make it in; the file is left as it was. |
 | 2, for the picture commands | Also: a picture file that is not a PNG, JPEG or GIF, is empty, over 50 MB or over 25 megapixels; no upload folder; `--list` with other flags. Nothing is contacted. |
 | 3 | Cannot sign in to Google: a secret is not set or empty, or Google refused the stored token (run `google-sign-in` again). |
 | 4 | Google could not be reached, or answered with an error; the message names the step and Google's own words. For the picture commands, also a picture Google could not fetch, a document changed by someone while the command ran (run it again), or a sharing that could not be taken back (`STILL SHARED`, see above). When Google stopped answering partway, the message says what may or may not have happened. |
-| 4, for `edit-doc` and `check-doc-format` | Also the document changed while the command read it (nothing was changed; run it again), or Google went out of reach while the change was being made (the message says it may or may not have been made, and how to look). |
+| 4, for `edit-doc`, `insert-paragraphs` and `check-doc-format` | Also the document changed while the command read it (nothing was changed; run it again), or Google went out of reach while the change was being made (the message says it may or may not have been made, and how to look). |
 | 5, for `edit-doc` | Also an edit that cannot be made (each is named, and nothing was changed), or an edit not in the document afterwards. |
+| 5, for `insert-paragraphs` | Also the words of `--after` or `--before` not in the document exactly once, in a table or in a pending suggestion (nothing was changed), or a new paragraph not in the document afterwards (each is marked). |
 | 5 | The document is not as it must be: no document with that id that this account can see, in the bin, not a Google Doc; or the words of `--on` or `--at` are not in it exactly once, or `--at`'s are not alone in their paragraph; no picture N; an upload folder this account cannot see; Google not saying an old picture's width (give `--width`). For `watch-doc`, also a snapshot that could not be written: the look was printed, the old snapshot stands, and the next look reports the same again. |
 
 Every message says what happened and what to do, on standard error, with the command's name
@@ -519,7 +578,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 835 tests, in about 10 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 932 tests, in about 13 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -530,7 +589,9 @@ document you have shared with the account, with `--title`; `comment-doc --list` 
 --add … --dry-run` on words in it; then one real `--add` and `--list` again to see it; `read-doc` on
 a document with a nested bullet list and a numbered list; `count-doc` and `check-typography` on a
 real document; `edit-doc --dry-run`, then `edit-doc` and `edit-doc --direct` on a scratch document,
-seeing the suggestions in Google Docs and accepting one; `check-doc-format` with the example format
+seeing the suggestions in Google Docs and accepting one; `insert-paragraphs --dry-run`, then as
+suggestions and with `--direct` on a scratch document, after a paragraph and after the last one,
+reading the result with `read-doc` and checking it with `check-doc-format`; `check-doc-format` with the example format
 on a scratch document, then `--fix --dry-run`, `--fix`, and the check again; `watch-doc` twice on a document, editing
 it between the two; `insert-picture --dry-run`, then for real, on a scratch document, from a file
 and from an address, then `replace-picture --list` and `--picture 1` on it, checking each time that
@@ -560,6 +621,9 @@ are still to come.
 - `edit-doc` changes only what the caller writes out exactly: it never makes up words, and it does
   not edit footnotes, headers or footers. Whether Google puts a suggested insertion before or after
   the words it replaces is Google's affair; the command checks only that the new words are there.
+- `insert-paragraphs` puts in headings, plain paragraphs and bulleted items only: not numbered or
+  nested items, tables, pictures or a title, and not beside a paragraph inside a table. Its bullets
+  are Google's plain preset; it cannot add items to a list elsewhere in the document.
 - A picture's height is left to Google, which keeps the picture's own proportions.
 - `count-doc` counts the body only, not footnotes, headers or footers, so a document with notes
   counts lower than `check-manuscript`, which adds its notes.
@@ -594,6 +658,8 @@ are still to come.
 - 16 November 2026: `check-doc-format` no longer checks or fixes a paragraph with no text, and takes
   `"start_at": "heading_2"` (or any heading level, or `title`) in the format file to leave a book's
   front matter alone. A format file without it checks everything, as before, but empty paragraphs.
+- 21 November 2026: new command, `insert-paragraphs`, which puts new paragraphs written out in a
+  file into a document beside a given paragraph.
 
 ## Contributing
 

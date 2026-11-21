@@ -19,7 +19,7 @@ def parse(text):
         if line.strip():
             lines.append((number, line.strip()))
         elif lines:
-            paragraphs.append(_inline(lines))
+            paragraphs.append(inline(lines))
             lines = []
     if not paragraphs:
         raise MarkupError("there is no text in it")
@@ -47,7 +47,7 @@ def _address(text, begin):
     return None
 
 
-def _inline(lines):
+def inline(lines):
     """The pieces of one paragraph, with their marks. Its lines are joined with one space."""
     text = " ".join(line for _, line in lines)
 

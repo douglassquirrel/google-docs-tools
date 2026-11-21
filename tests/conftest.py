@@ -495,7 +495,7 @@ class FakeGoogle:
                 look.pop("picture", None)  # text after a picture is not itself a picture
                 look.pop("paragraph", None)
                 # As Google's page says: a line break put in makes a new paragraph with the
-                # paragraph style of the place it is put.
+                # paragraph style of the place it is put, "including lists and bullets".
                 ending = next(style for character, style in characters[position:]
                               if character == "\n")
                 added = []
@@ -507,6 +507,8 @@ class FakeGoogle:
                     style = dict(look)
                     if character == "\n" and "paragraph" in ending:
                         style["paragraph"] = dict(ending["paragraph"])
+                    if character == "\n" and "bullet" in ending:
+                        style["bullet"] = dict(ending["bullet"])
                     added.append([character, style])
                 characters[position:position] = added
             elif kind == "insertInlineImage":
@@ -551,6 +553,42 @@ class FakeGoogle:
                             paragraph.pop(field, None)
                     characters[ending][1]["paragraph"] = paragraph
                     reached = ending + 1
+            elif kind in ("createParagraphBullets", "deleteParagraphBullets"):
+                first = place(wanted["range"]["startIndex"])
+                last = place(wanted["range"]["endIndex"])
+                if first is None or last is None or first >= last:
+                    return refuse("Invalid requests[%d].%s: bad range" % (number, kind))
+                ends = []  # the line break of every paragraph the range touches
+                reached = first
+                while reached < last:
+                    ends.append(next(index for index in range(reached, len(characters))
+                                     if characters[index][0] == "\n"))
+                    reached = ends[-1] + 1
+                if kind == "deleteParagraphBullets":
+                    for ending in ends:
+                        characters[ending][1].pop("bullet", None)
+                    continue
+                preset = wanted.get("bulletPreset")
+                if preset not in BULLET_PRESETS:
+                    return refuse("Invalid requests[%d].createParagraphBullets: bulletPreset %r"
+                                  % (number, preset))
+                begins = max([0] + [index + 1 for index in range(first)
+                                    if characters[index][0] == "\n"])  # the first paragraph's
+                if any(characters[start][0] == "\t"
+                       for start in [begins] + [ending + 1 for ending in ends[:-1]]):
+                    raise AssertionError("the tools never make a list item of a paragraph that "
+                                         "starts with a tab, which Google takes for its level")
+                # As Google's page says: added to the list just before, if that list has the
+                # same preset; otherwise a new list.
+                before = characters[begins - 1][1].get("bullet") if begins else None
+                presets = entry.setdefault("presets", {})
+                if before is not None and presets.get(before["listId"]) == preset:
+                    list_id = before["listId"]
+                else:
+                    list_id = "list.%d.%d" % (len(self.calls), number)
+                    presets[list_id] = preset
+                for ending in ends:
+                    characters[ending][1]["bullet"] = {"listId": list_id}
             elif kind == "updateTextStyle":
                 first = place(wanted["range"]["startIndex"])
                 last = place(wanted["range"]["endIndex"])
@@ -669,6 +707,15 @@ def fake():
 # How the Docs API can show a document's pending suggestions (its reference for documents.get, read
 # 16 November 2026): inline, with each suggested insertion and deletion marked on its text run; as if
 # all were accepted; as if none were.
+# Google's names for a list's bullets or numbers, from its page for createParagraphBullets.
+BULLET_PRESETS = (
+    "BULLET_DISC_CIRCLE_SQUARE", "BULLET_DIAMONDX_ARROW3D_SQUARE", "BULLET_CHECKBOX",
+    "BULLET_ARROW_DIAMOND_DISC", "BULLET_STAR_CIRCLE_SQUARE", "BULLET_ARROW3D_CIRCLE_SQUARE",
+    "BULLET_LEFTTRIANGLE_DIAMOND_DISC", "BULLET_DIAMONDX_HOLLOWDIAMOND_SQUARE",
+    "BULLET_DIAMOND_CIRCLE_SQUARE", "NUMBERED_DECIMAL_ALPHA_ROMAN",
+    "NUMBERED_DECIMAL_ALPHA_ROMAN_PARENS", "NUMBERED_DECIMAL_NESTED",
+    "NUMBERED_UPPERALPHA_ALPHA_ROMAN", "NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL",
+    "NUMBERED_ZERODECIMAL_ALPHA_ROMAN")
 VIEWS = ("SUGGESTIONS_INLINE", "PREVIEW_SUGGESTIONS_ACCEPTED", "PREVIEW_WITHOUT_SUGGESTIONS")
 INSERTED, DELETED = "suggestedInsertionIds", "suggestedDeletionIds"
 

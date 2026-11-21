@@ -17,7 +17,7 @@ RUN = "import runpy, sys; sys.dont_write_bytecode = False; sys.argv = sys.argv[1
 @pytest.mark.parametrize("command", ["read-doc", "comment-doc", "google-sign-in", "watch-doc", "insert-picture",
                                      "replace-picture", "count-doc",
                                      "check-typography", "edit-doc",
-                                     "check-doc-format"])
+                                     "check-doc-format", "insert-paragraphs"])
 def test_a_run_writes_no_bytecode_into_the_checkout(tmp_path, command):
     package = tmp_path / "googledocstools"
     package.mkdir()
