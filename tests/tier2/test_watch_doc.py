@@ -578,3 +578,125 @@ def test_wait_timing_that_makes_no_sense_is_exit_2_and_nothing_is_contacted(
         watch, fake, argv, told):
     result = watch(*argv)
     assert result.code == 2 and told in result.err and fake.calls == []
+
+
+# --- --wait --settle: return only once the writer pauses (Request 36) --------------------------
+
+def changed(words):
+    """HEADED with its first plain paragraph's words changed."""
+    return [HEADED[0], words] + HEADED[2:]
+
+
+def plain_report(watch, tmp_path, kept):
+    """What a single look prints, compared with the snapshot held before the wait."""
+    other = tmp_path / "the snapshot before the wait.snapshot"
+    other.write_bytes(kept)
+    return watch(DOC_ID, "--snapshot", str(other), defaults=False).out
+
+
+def test_settle_with_no_change_at_all_is_exit_6_as_without_it(watch):
+    _looked(watch)
+    result = watch("--wait", "--every", "60", "--for", "180", "--settle", "30")
+    assert (result.code, result.out) == (
+        6, "2026-11-01 19:43 UTC: nothing new in 3 minutes (4 looks)\n")
+
+
+def test_settle_returns_once_the_document_has_stood_still_with_what_changed(watch, tmp_path):
+    _looked(watch)
+    kept = watch.file.read_bytes()
+    watch.time.then[1] = lambda: watch.document(changed("A paragraph of new words here."))
+    result = watch("--wait", "--every", "60", "--for", "600", "--settle", "30")
+    assert (result.code, result.err) == (0, "")
+    assert watch.time.slept == [60, 30]
+    assert result.out.startswith("2026-11-01 19:41 UTC: 1 paragraph changed\n")
+    assert snapshot.read(watch.file.read_text(encoding="utf-8")).text != snapshot.read(
+        kept.decode("utf-8")).text
+    assert plain_report(watch, tmp_path, kept) == result.out
+
+
+def test_changes_a_minute_apart_come_back_once_start_to_end(watch, tmp_path):
+    _looked(watch)
+    kept = watch.file.read_bytes()
+    for number, words in ((1, "A paragraph"), (2, "A paragraph of"),
+                          (3, "A paragraph of fresh words.")):
+        watch.time.then[number] = lambda words=words: watch.document(changed(words))
+    result = watch("--wait", "--every", "60", "--for", "600", "--settle", "90")
+    assert result.code == 0
+    assert watch.time.slept == [60, 90, 90, 90]
+    assert result.out.splitlines()[0].endswith(": 1 paragraph changed")
+    assert "fresh" in result.out and result.out.count("under ") == 1
+    assert plain_report(watch, tmp_path, kept) == result.out
+
+
+def test_a_note_typed_in_two_goes_comes_back_once_whole(watch):
+    _looked(watch)
+    watch.time.then[1] = lambda: watch.document(changed("A paragraph of plain words here [equiv"))
+    watch.time.then[2] = lambda: watch.document(
+        changed("A paragraph of plain words here [equivalent for biologists]"))
+    result = watch("--wait", "--every", "60", "--for", "600", "--settle", "30")
+    assert result.code == 0
+    lines = result.out.splitlines()
+    assert lines[0].endswith(": 1 paragraph changed, 1 new note")
+    assert lines[lines.index("== New notes ==") + 1].startswith("[equivalent for biologists]  in:")
+
+
+def test_a_writer_who_never_pauses_gets_everything_at_for(watch):
+    _looked(watch)
+    for number in range(1, 10):
+        watch.time.then[number] = lambda number=number: watch.document(
+            changed("A paragraph of plain words here, %d." % number))
+    result = watch("--wait", "--every", "60", "--for", "300", "--settle", "60")
+    assert result.code == 0
+    assert result.out.splitlines()[0] == "2026-11-01 19:45 UTC: 1 paragraph changed"
+    assert "here, 5." in result.out
+
+
+def test_a_comment_added_while_it_settles_is_in_the_report(watch):
+    _looked(watch, comments=[_comment("c1")])
+    watch.time.then[1] = lambda: watch.document(
+        changed("A paragraph of plain words here, and more."))
+    watch.time.then[2] = lambda: watch.comments([_comment("c1"), _comment("c2")])
+    result = watch("--wait", "--every", "60", "--for", "600", "--settle", "30")
+    assert result.code == 0 and watch.time.slept == [60, 30, 30]
+    assert result.out.splitlines()[0].endswith(": 1 paragraph changed, 1 new comment")
+
+
+def test_changes_undone_before_it_settles_are_nothing_new(watch):
+    _looked(watch)
+    watch.time.then[1] = lambda: watch.document(changed("Gone again."))
+    watch.time.then[2] = lambda: watch.document(HEADED)
+    result = watch("--wait", "--every", "60", "--for", "180", "--settle", "30")
+    assert result.code == 6 and "nothing new" in result.out
+
+
+def test_a_failed_look_while_it_settles_says_the_changes_are_left_for_the_next_run(watch, fake):
+    _looked(watch)
+    kept = watch.file.read_bytes()
+    watch.time.then[1] = lambda: watch.document(changed("Unreported words."))
+    watch.time.then[2] = lambda: fake.unreachable.add("docs.googleapis.com")
+    result = watch("--wait", "--every", "60", "--for", "600", "--settle", "30")
+    assert result.code == 4 and result.out == ""
+    assert "Changes were seen and not reported" in result.err and "next run" in result.err
+    assert watch.file.read_bytes() == kept
+    fake.unreachable.clear()
+    assert "Unreported" in watch().out
+
+
+def test_settle_with_no_snapshot_yet_returns_at_once_with_the_first_look(watch):
+    watch.document(HEADED)
+    result = watch("--wait", "--settle", "60")
+    assert result.code == 0 and "no snapshot yet" in result.out and watch.time.slept == []
+
+
+@pytest.mark.parametrize("argv,told", [
+    (("--settle", "60"), "--settle goes with --wait"),
+    (("--wait", "--settle", "10"), "--settle must be at least 30"),
+    (("--wait", "--settle", "400", "--for", "300"), "--settle must not be more than --for"),
+])
+def test_settle_that_makes_no_sense_is_exit_2_and_nothing_is_contacted(watch, fake, argv, told):
+    result = watch(*argv)
+    assert result.code == 2 and told in result.err and fake.calls == []
+
+
+def test_help_names_settle(watch):
+    assert "--settle" in watch("--help", defaults=False).out

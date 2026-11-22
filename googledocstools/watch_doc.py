@@ -41,6 +41,9 @@ MARKERS = (("--note-open", "NOTE_OPEN", "["), ("--note-close", "NOTE_CLOSE", "]"
 DOUBLED = "SKIP_DOUBLED"
 NOTHING_NEW = 6  # --wait: no look found anything new in --for seconds
 EVERY, FOR, LEAST = 300, 2700, 60  # --wait's timing, in seconds: the defaults and the floor
+SETTLE_LEAST = 30  # --settle's floor, in seconds
+UNREPORTED = (" Changes were seen and not reported; the snapshot was not moved on, so the next run "
+              "reports them.")
 STOPPED = "stopped; the snapshot of the last look is kept."
 
 
@@ -59,6 +62,8 @@ def _timing(args):
     if not args.wait:
         if args.every is not None or args.for_ is not None:
             raise Stop(USAGE, "--every and --for go with --wait; without it watch-doc looks once.")
+        if args.settle is not None:
+            raise Stop(USAGE, "--settle goes with --wait; without it watch-doc looks once.")
         return None, None
     every = EVERY if args.every is None else args.every
     for_ = FOR if args.for_ is None else args.for_
@@ -67,6 +72,10 @@ def _timing(args):
                    "often." % LEAST)
     if every > for_:
         raise Stop(USAGE, "--every must not be more than --for (%d seconds)." % for_)
+    if args.settle is not None and args.settle < SETTLE_LEAST:
+        raise Stop(USAGE, "--settle must be at least %d seconds." % SETTLE_LEAST)
+    if args.settle is not None and args.settle > for_:
+        raise Stop(USAGE, "--settle must not be more than --for (%d seconds)." % for_)
     return every, for_
 
 
@@ -88,7 +97,10 @@ def _parser():
         "secrets file in the same command."
         " With --wait it looks every --every seconds and returns with the first look that finds "
         "anything new, printed as above; after --for seconds of nothing new it prints one line "
-        "saying so. Exit codes: 0 the look worked, whether "
+        "saying so. With --settle too, a look that finds something new does not end it: it "
+        "looks again every --settle seconds and returns once nothing has changed since the look "
+        "before, with one report of all that changed since it began. Exit codes: 0 the look "
+        "worked, whether "
         "or not anything is new (the summary line says which), or with --wait a look found "
         "something new; 6 nothing new in --for seconds (--wait); 130 or 143 stopped while "
         "waiting; 2 bad arguments or settings, or a "
@@ -114,6 +126,10 @@ def _parser():
     parser.add_argument(
         "--for", metavar="SECONDS", type=_whole_seconds, dest="for_",
         help="with --wait, how long to look before giving up (default: %d)" % FOR)
+    parser.add_argument(
+        "--settle", metavar="SECONDS", type=_whole_seconds,
+        help="with --wait, return only once the document has stood still this long (at least %d), "
+        "with all that changed since the wait began" % SETTLE_LEAST)
     parser.add_argument(
         "--settings", metavar="FILE",
         help="the settings file (default: ~/.google-docs-tools.conf, if it exists)")
@@ -244,14 +260,24 @@ def _stamp(clock):
     return clock().astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _observe(args, env, send, markers):
+    """The document as a look sees it: (its paragraphs, its text, its notes, its comments)."""
+    described, found = _read(args, env, send)
+    document = paragraphs(described)
+    return document, as_text(document), notes(document, markers), found
+
+
+def _keep(args, when, seen, found, text):
+    if not args.dry_run:
+        _save(args.snapshot, snapshot.make(snapshot.Snapshot(
+            args.document, when, seen, snapshot.comment_state(found), text)))
+
+
 def _look(args, env, send, markers, out, clock):
     """One look: printed if anything is new (always, without --wait), the snapshot saved after.
     Whether anything was new; a first look always is."""
     before = _before(args.snapshot, args.document)
-    described, found = _read(args, env, send)
-    document = paragraphs(described)
-    text = as_text(document)
-    seen = notes(document, markers)
+    document, text, seen, found = _observe(args, env, send, markers)
     when = _stamp(clock)
     if before is None:
         lines, new = _first_look(when, found, document, markers, args.dry_run), True
@@ -260,25 +286,57 @@ def _look(args, env, send, markers, out, clock):
     if new or not args.wait:
         out.write("\n".join(lines) + "\n")
         out.flush()
-    if not args.dry_run:
-        _save(args.snapshot, snapshot.make(snapshot.Snapshot(
-            args.document, when, seen, snapshot.comment_state(found), text)))
+    _keep(args, when, seen, found, text)
     return new
+
+
+def _settling(args, env, send, markers, out, clock, sleep, every, for_):
+    """--wait --settle: look every --every seconds until something is new since the snapshot, then
+    every --settle seconds until a look sees nothing changed since the one before; then one report
+    against the snapshot, which is saved only then. True if it reported, False if --for ran out with
+    nothing new; and how many looks."""
+    base = _before(args.snapshot, args.document)
+    start, looks, previous = clock(), 0, None  # previous: the last look, while something is new
+    while True:
+        looked = (clock() - start).total_seconds()
+        try:
+            _, text, seen, found = _observe(args, env, send, markers)
+        except Stop as stop:
+            raise Stop(stop.code, stop.message + (UNREPORTED if previous is not None else ""))
+        looks += 1
+        when = _stamp(clock)
+        lines, new = _later_look(when, base, text, seen, found)
+        now = (text, seen, snapshot.comment_state(found))
+        due = looked + (args.settle if new else every)
+        if new and (now == previous or due > for_):
+            out.write("\n".join(lines) + "\n")
+            out.flush()
+            _keep(args, when, seen, found, text)
+            return True, looks
+        previous = now if new else None
+        if due > for_:
+            return False, looks
+        sleep(max(0, due - (clock() - start).total_seconds()))
 
 
 def _run(args, env, send, default_settings, out, clock, sleep):
     every, for_ = _timing(args)
     markers = _markers(args, default_settings)
     start, looks = clock(), 0
-    while True:
-        new = _look(args, env, send, markers, out, clock)
-        looks += 1
-        if new or not args.wait:
+    if args.settle is not None and _before(args.snapshot, args.document) is not None:
+        reported, looks = _settling(args, env, send, markers, out, clock, sleep, every, for_)
+        if reported:
             return OK
-        due = looks * every  # the next look, in seconds from the first: every --every seconds
-        if due > for_:
-            break
-        sleep(max(0, due - (clock() - start).total_seconds()))
+    else:  # a single look, a --wait, or a --settle with no snapshot yet (its first look returns)
+        while True:
+            new = _look(args, env, send, markers, out, clock)
+            looks += 1
+            if new or not args.wait:
+                return OK
+            due = looks * every  # the next look, in seconds from the first: every --every seconds
+            if due > for_:
+                break
+            sleep(max(0, due - (clock() - start).total_seconds()))
     minutes = round((clock() - start).total_seconds() / 60)
     out.write("%s: nothing new in %d minute%s (%d looks)\n" % (
         _stamp(clock), minutes, "" if minutes == 1 else "s", looks))
