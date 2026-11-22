@@ -275,11 +275,11 @@ def _run(args, env, send, default_settings, out, clock, sleep):
         looks += 1
         if new or not args.wait:
             return OK
-        waited = (clock() - start).total_seconds()
-        if waited + every > for_:
+        due = looks * every  # the next look, in seconds from the first: every --every seconds
+        if due > for_:
             break
-        sleep(every)
-    minutes = round(waited / 60)
+        sleep(max(0, due - (clock() - start).total_seconds()))
+    minutes = round((clock() - start).total_seconds() / 60)
     out.write("%s: nothing new in %d minute%s (%d looks)\n" % (
         _stamp(clock), minutes, "" if minutes == 1 else "s", looks))
     return NOTHING_NEW

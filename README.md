@@ -662,7 +662,9 @@ put a heading 3, three paragraphs and a three-item list into a scratch document 
 exactly as written; `check-doc-format` reads suggestions inline, so it reports the new text's look
 before its suggested change until the suggestions are accepted. On 22 November 2026 `check-doc-format
 --fix` set a heading's bold, then its font, then both back, on a scratch document: Google drops text's
-own bold when its font is set, which the fix now puts back in the same change. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+own bold when its font is set, which the fix now puts back in the same change. The same day
+`watch-doc --wait` ran read-only on a scratch document: a first look, two-minute waits with nothing
+new (exit 6, 3 looks), and a stop (exit 143, the snapshot whole, nothing beside it). As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
 in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
 documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;

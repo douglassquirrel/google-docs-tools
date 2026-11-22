@@ -466,6 +466,17 @@ def test_wait_with_nothing_new_returns_after_for_with_one_line_and_exit_6(watch)
     assert snapshot.read(watch.file.read_text(encoding="utf-8")).taken == "2026-11-01 19:43 UTC"
 
 
+def test_looks_that_take_time_still_come_every_every_seconds_until_for(watch):
+    # Seen at Google, 22 November 2026: with --every 60 --for 120 it gave up after 2 looks, as
+    # each real look takes a few seconds and the full wait came on top.
+    _looked(watch)
+    watch.time.drift = 2
+    result = watch("--wait", "--every", "60", "--for", "180")
+    assert result.code == 6
+    assert result.out.endswith(": nothing new in 3 minutes (4 looks)\n")
+    assert len(watch.time.slept) == 3 and all(50 < seconds < 60 for seconds in watch.time.slept)
+
+
 def test_wait_looks_every_five_minutes_for_45_minutes_unless_told(watch):
     _looked(watch)
     result = watch("--wait")

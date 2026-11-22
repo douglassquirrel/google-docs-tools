@@ -204,8 +204,10 @@ class Time:
         self.now = datetime(2026, 11, 1, 19, 40, tzinfo=timezone.utc)
         self.slept = []
         self.then = {}
+        self.drift = 0  # seconds each reading of the clock moves it on, as a real look takes time
 
     def clock(self):
+        self.now += timedelta(seconds=self.drift)
         return self.now
 
     def sleep(self, seconds):
