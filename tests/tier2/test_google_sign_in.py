@@ -118,6 +118,67 @@ def test_an_env_file_that_does_not_exist_is_refused_not_created(sign_in, fake, t
     assert fake.calls == [] and sign_in.listeners == []
 
 
+def a_set(folder):
+    """An invented secrets set: folder/env.sh, holding ENV_TEXT."""
+    folder.mkdir(parents=True)
+    path = folder / "env.sh"
+    path.write_text(ENV_TEXT, encoding="utf-8")
+    return path
+
+
+def refused_as_shared(sign_in, fake, path, *more, environment=None):
+    result = sign_in("--account", ACCOUNT, "--env-file", str(path), *more, defaults=False,
+                     environment=environment)
+    assert result.code == 2 and result.out == ""
+    assert str(path) in result.err and "shared" in result.err
+    assert "online-publishing-tools" in result.err and "google-sign-in" in result.err
+    assert fake.calls == [] and sign_in.listeners == []
+    assert path.read_text(encoding="utf-8") == ENV_TEXT
+
+
+@pytest.mark.parametrize("more", [(), ("--dry-run",)])
+def test_an_env_file_in_a_shared_secrets_set_is_refused_dry_run_or_not(sign_in, fake, more):
+    path = a_set(sign_in.home / "projects" / "secrets" / "google")
+    refused_as_shared(sign_in, fake, path, *more)
+
+
+def test_the_root_of_the_sets_is_read_from_lobster_tools_settings(sign_in, fake):
+    (sign_in.home).mkdir(exist_ok=True)
+    (sign_in.home / ".lobster-tools.conf").write_text(
+        "# invented\nMAIL_ROOT=~/mail\nSECRETS_ROOT=\"~/a vault\"\n", encoding="utf-8")
+    refused_as_shared(sign_in, fake, a_set(sign_in.home / "a vault" / "google"))
+    elsewhere = a_set(sign_in.home / "projects" / "secrets" / "own")
+    assert sign_in("--account", ACCOUNT, "--env-file", str(elsewhere), "--dry-run",
+                   defaults=False).code == 0
+
+
+def test_the_root_in_the_environment_wins_over_the_settings(sign_in, fake, env, tmp_path):
+    (sign_in.home).mkdir(exist_ok=True)
+    (sign_in.home / ".lobster-tools.conf").write_text("SECRETS_ROOT=~/vault\n", encoding="utf-8")
+    environment = dict(env, LOBSTER_SECRETS_ROOT=str(tmp_path / "other root"))
+    refused_as_shared(sign_in, fake, a_set(tmp_path / "other root" / "google"),
+                      environment=environment)
+
+
+def test_settings_that_cannot_be_read_leave_the_usual_root_guarded(sign_in, fake):
+    (sign_in.home).mkdir(exist_ok=True)
+    (sign_in.home / ".lobster-tools.conf").write_text("not a setting\n", encoding="utf-8")
+    refused_as_shared(sign_in, fake, a_set(sign_in.home / "projects" / "secrets" / "google"))
+
+
+def test_a_link_to_a_file_in_a_shared_set_is_refused(sign_in, fake, tmp_path):
+    target = a_set(sign_in.home / "projects" / "secrets" / "google")
+    link = tmp_path / "looks like mine.sh"
+    link.symlink_to(target)
+    refused_as_shared(sign_in, fake, link)
+
+
+def test_a_folder_beside_the_root_whose_name_only_starts_the_same_is_not_refused(sign_in):
+    path = a_set(sign_in.home / "projects" / "secrets-old" / "google")
+    assert sign_in("--account", ACCOUNT, "--env-file", str(path), "--dry-run",
+                   defaults=False).code == 0
+
+
 def test_an_env_file_that_is_a_folder_is_refused(sign_in, fake):
     result = sign_in("--account", ACCOUNT, "--env-file", str(sign_in.path.parent),
                      defaults=False)

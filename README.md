@@ -524,6 +524,12 @@ file as `GOOGLE_OAUTH_REFRESH_TOKEN`, keeping every other line and leaving the f
 its exit code is 0, nothing was stored. `--dry-run` checks the arguments, the environment and the
 file and contacts nothing.
 
+It refuses (exit 2, before anything is contacted) an env file inside lobster-tools' shared secrets
+sets: the folder `LOBSTER_SECRETS_ROOT` names, else `SECRETS_ROOT` in `~/.lobster-tools.conf`, else
+`~/projects/secrets`, a link into it included. A shared set's token serves other tools too, with
+more permissions than this command asks for (Google Docs and Google Drive), and a sign-in here would
+take theirs away: sign in for the shared set `google` with online-publishing-tools' `google-sign-in`.
+
 ### The settings file
 
 `~/.google-docs-tools.conf`, or the file given with `--settings`: `KEY=value` lines and `#`
@@ -553,7 +559,7 @@ same command as the tool. A missing one stops the command with exit 3 and the li
 | 1 | `check-typography`: something to fix. `check-doc-format`: something does not match the format (after the fix, with `--fix`). |
 | 2, for `edit-doc` and `check-doc-format` | Also: an edits or format file that cannot be read, is not JSON in UTF-8, or has faults; every fault is named. Nothing is contacted. |
 | 2, for `insert-paragraphs` | Also: a content file that cannot be read, is not UTF-8, or has faults (each named with its line), or holds the words of `--after` or `--before`; neither of those given, or words empty or with a line break. Nothing is contacted. |
-| 2 | Bad arguments or settings: a `DOC` that is not an id or an address, flags that do not go together, an address not in `COMMENT_RECIPIENTS`, an unreadable `--settings` file, an empty marker. For `watch-doc`, also a `--snapshot` file that is not its snapshot of this document, or no folder to make it in; the file is left as it was. |
+| 2 | Bad arguments or settings: for `google-sign-in`, an `--env-file` in a shared secrets set; a `DOC` that is not an id or an address, flags that do not go together, an address not in `COMMENT_RECIPIENTS`, an unreadable `--settings` file, an empty marker. For `watch-doc`, also a `--snapshot` file that is not its snapshot of this document, or no folder to make it in; the file is left as it was. |
 | 2, for the picture commands | Also: a picture file that is not a PNG, JPEG or GIF, is empty, over 50 MB or over 25 megapixels; no upload folder; `--list` with other flags. Nothing is contacted. |
 | 3 | Cannot sign in to Google: a secret is not set or empty, or Google refused the stored token (run `google-sign-in` again). |
 | 4 | Google could not be reached, or answered with an error; the message names the step and Google's own words. For the picture commands, also a picture Google could not fetch, a document changed by someone while the command ran (run it again), or a sharing that could not be taken back (`STILL SHARED`, see above). When Google stopped answering partway, the message says what may or may not have happened. |
@@ -578,7 +584,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 932 tests, in about 13 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 939 tests, in about 13 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -664,6 +670,8 @@ are still to come.
   front matter alone. A format file without it checks everything, as before, but empty paragraphs.
 - 21 November 2026: new command, `insert-paragraphs`, which puts new paragraphs written out in a
   file into a document beside a given paragraph.
+- 22 November 2026: `google-sign-in` refuses an `--env-file` inside lobster-tools' shared secrets
+  sets; sign in for the shared set `google` with online-publishing-tools' `google-sign-in`.
 
 ## Contributing
 

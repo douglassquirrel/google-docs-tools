@@ -24,10 +24,13 @@ from googledocstools.cli import (
     seconds,
     secrets,
 )
+from googledocstools.settings import SettingsError, parse_settings
 
 COMMAND = "google-sign-in"
 TOKEN_NAME = "GOOGLE_OAUTH_REFRESH_TOKEN"
 CLIENT_SECRETS = ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET")
+# Where lobster-tools' shared secrets sets live unless its settings say otherwise (Settled 13).
+SECRETS_ROOT = "~/projects/secrets"
 
 
 def challenge_for(verifier):
@@ -184,6 +187,37 @@ def _env_file(path):
     return real
 
 
+def _secrets_root(env, home):
+    """Where lobster-tools' shared secrets sets live, found as its secrets command finds it: the
+    environment's LOBSTER_SECRETS_ROOT, else SECRETS_ROOT in ~/.lobster-tools.conf, else the usual
+    place. A leading ~ is the home folder; settings that cannot be read leave the usual place."""
+    root = env.get("LOBSTER_SECRETS_ROOT")
+    if not root:
+        try:
+            with open(os.path.join(home, ".lobster-tools.conf"), encoding="utf-8") as handle:
+                root = parse_settings(handle.read()).get("SECRETS_ROOT")
+        except (OSError, UnicodeDecodeError, SettingsError):
+            root = None
+    root = root or SECRETS_ROOT
+    if root == "~" or root.startswith("~/"):
+        root = home + root[1:]
+    return os.path.realpath(root)
+
+
+def _not_shared(given, path, env, home):
+    """Stop if the env file (given, and its real path) is in a shared secrets set: its token
+    serves other tools too, with more permissions than this command asks for, which a sign-in
+    here would take away."""
+    root = _secrets_root(env, home)
+    if os.path.commonpath([root, path]) == root:
+        raise Stop(USAGE, "--env-file %s is in the shared secrets sets (%s), whose Google token "
+                   "other tools use with more permissions than this command asks for: signing "
+                   "in here would take theirs away. Sign in for a shared set with "
+                   "online-publishing-tools' google-sign-in instead; this one is for a "
+                   "project's own secrets file. Nothing was stored." % (
+                       given if given == path else "%s (%s)" % (given, path), root))
+
+
 def _store(path, token):
     """Put the token in the env file through a temporary file beside it, mode 600."""
     with open(path, encoding="utf-8", newline="") as handle:
@@ -199,10 +233,11 @@ def _store(path, token):
         raise
 
 
-def _run(args, env, send, listen, random_text, out):
+def _run(args, env, send, listen, random_text, out, home):
     if not re.fullmatch(r"[^@\s]+@[^@\s]+", args.account):
         raise Stop(USAGE, "--account %r is not an email address." % args.account)
     path = _env_file(args.env_file)
+    _not_shared(args.env_file, path, env, home)
     client_id, client_secret = secrets(env, CLIENT_SECRETS)
     if args.dry_run:
         out.write(
@@ -287,8 +322,9 @@ def _run(args, env, send, listen, random_text, out):
     return OK
 
 
-def main(argv, env=None, send=None, listen=None, random_text=None):
+def main(argv, env=None, send=None, listen=None, random_text=None, home=None):
     env = os.environ if env is None else env
+    home = os.path.expanduser("~") if home is None else home
     send = google.https_send if send is None else send
     listen = Listener if listen is None else listen
     if random_text is None:
@@ -299,7 +335,7 @@ def main(argv, env=None, send=None, listen=None, random_text=None):
     except SystemExit as stop:
         return stop.code
     try:
-        return _run(args, env, send, listen, random_text, sys.stdout)
+        return _run(args, env, send, listen, random_text, sys.stdout, home)
     except Stop as stop:
         sys.stderr.write("%s: %s\n" % (COMMAND, stop.message))
         return stop.code

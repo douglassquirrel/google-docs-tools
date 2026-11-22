@@ -73,6 +73,7 @@ def sign_in(fake, env, tmp_path, capsys):
 
     class Runner:
         path = env_file
+        home = tmp_path / "home"  # an invented home folder, with no ~/.lobster-tools.conf at first
         answer = "unset"
         listen_error = None
 
@@ -92,7 +93,7 @@ def sign_in(fake, env, tmp_path, capsys):
             texts = iter([STATE, VERIFIER])
             code = module.main(
                 args, env=env if environment is None else environment, send=fake,
-                listen=self.listen, random_text=lambda: next(texts),
+                listen=self.listen, random_text=lambda: next(texts), home=str(self.home),
             )
             captured = capsys.readouterr()
             for secret in SECRETS:
