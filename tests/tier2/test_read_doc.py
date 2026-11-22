@@ -87,7 +87,15 @@ def test_a_missing_secret_is_exit_3_and_nothing_is_contacted(read, fake, env):
     del environment["GOOGLE_OAUTH_REFRESH_TOKEN"]
     result = read(environment=environment)
     assert result.code == 3 and "GOOGLE_OAUTH_REFRESH_TOKEN" in result.err
-    assert "google-docs-tools-secrets" in result.err and fake.calls == []
+    assert "secrets run google -- " in result.err and "set -a; . " in result.err
+    assert "google-docs-tools-secrets" not in result.err and fake.calls == []
+
+
+def test_an_empty_secret_is_exit_3_saying_how_to_see_which_are_set(read, fake, env):
+    result = read(environment=dict(env, GOOGLE_OAUTH_CLIENT_SECRET=""))
+    assert result.code == 3 and "GOOGLE_OAUTH_CLIENT_SECRET is empty" in result.err
+    assert "secrets check google" in result.err and "google-docs-tools-secrets" not in result.err
+    assert fake.calls == []
 
 
 def test_a_refused_sign_in_is_exit_3(read, fake, env):

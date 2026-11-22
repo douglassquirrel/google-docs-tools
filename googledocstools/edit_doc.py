@@ -37,8 +37,10 @@ def _parser():
         "paragraph; only the words that change are changed, and new words take the look of the "
         "old. The whole list is checked before anything is changed, the change is all or "
         "nothing, and it is made only if the document is as it was when read.",
-        epilog="The Google secrets are read from the environment: source env.sh from the secrets "
-        "folder (google-docs-tools-secrets) in the same command. Exit codes: 0 every edit made "
+        epilog="The Google secrets are read from the environment: run the command through "
+        "lobster-tools' secrets with the set that holds them (secrets run google -- COMMAND …), "
+        "or source a secrets file in the same command."
+        " Exit codes: 0 every edit made "
         "and found in the document afterwards (with --dry-run: every edit can be made); 2 bad "
         "arguments or edits file; 3 cannot sign in to Google; 4 Google could not be reached or "
         "answered with an error, or the document changed while this ran; 5 there is no such "

@@ -29,8 +29,10 @@ def _parser():
         "*italic* and [links](address), list items with -  or their number and two more spaces "
         "for each level, a blank line between paragraphs, a --- for a horizontal rule. Every "
         "call it makes to Google is a read; it changes nothing.",
-        epilog="The Google secrets are read from the environment: source env.sh from the secrets "
-        "folder (google-docs-tools-secrets) in the same command. Exit codes: 0 printed; 2 bad "
+        epilog="The Google secrets are read from the environment: run the command through "
+        "lobster-tools' secrets with the set that holds them (secrets run google -- COMMAND …), "
+        "or source a secrets file in the same command."
+        " Exit codes: 0 printed; 2 bad "
         "arguments; 3 cannot sign in to Google; 4 Google could not be reached or answered with "
         "an error; 5 there is no such document, or it is not a Google Doc.",
     )

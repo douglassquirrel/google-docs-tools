@@ -146,8 +146,10 @@ def _parser():
         description="Sign in to Google once, in a browser, as the account the tools act as, "
         "and store the refresh token in the secrets file without showing it. Run by Squirrel "
         "in Terminal on the Mac; run again only when Google stops accepting the token.",
-        epilog="The client id and secret are read from the environment: source env.sh from "
-        "the secrets folder in the same command. Exit codes: 0 signed in and stored (or, "
+        epilog="The client id and secret are read from the environment: source a secrets file in "
+        "the same command, the one --env-file names. It refuses a file in lobster-tools' shared "
+        "secrets sets: for the shared set google, use online-publishing-tools' google-sign-in, "
+        "which asks for more permissions. Exit codes: 0 signed in and stored (or, "
         "with --dry-run, checked); 2 bad arguments; 3 a client value is missing or Google "
         "refused the sign-in; 4 Google could not be reached or answered with an error; "
         "5 no answer, the wrong account, or anything else not as it must be. Unless the "

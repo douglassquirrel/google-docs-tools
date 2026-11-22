@@ -120,8 +120,8 @@ def requests_for(place, new, before):
             position += units(span.text)
         position += 1  # the line break
         made.append({"updateParagraphStyle": {
-            "range": _between(start, position), "paragraphStyle": {"namedStyleType": paragraph.kind},
-            "fields": KINDS}})
+            "range": _between(start, position),
+            "paragraphStyle": {"namedStyleType": paragraph.kind}, "fields": KINDS}})
         if paragraph.item and items and items[-1][1] == start:
             items[-1][1] = position
         elif paragraph.item:

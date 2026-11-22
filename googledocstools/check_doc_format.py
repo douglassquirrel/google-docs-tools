@@ -36,8 +36,10 @@ def _parser():
         "page breaks, colours and page that do not match, in one change, then checks again; it "
         "never changes a character of text, never a heading's level, and never bold or italic "
         "in body text or list items.",
-        epilog="The Google secrets are read from the environment: source env.sh from the secrets "
-        "folder (google-docs-tools-secrets) in the same command. Exit codes: 0 everything "
+        epilog="The Google secrets are read from the environment: run the command through "
+        "lobster-tools' secrets with the set that holds them (secrets run google -- COMMAND …), "
+        "or source a secrets file in the same command."
+        " Exit codes: 0 everything "
         "matches (after the fix, with --fix); 1 something does not match; 2 bad arguments or "
         "format file; 3 cannot sign in to Google; 4 Google could not be reached or answered "
         "with an error, or the document changed while this ran; 5 there is no such document, "

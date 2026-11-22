@@ -47,8 +47,10 @@ def _parser():
         "and [links](https://…), a blank line between paragraphs. Each takes the document's own "
         "style for its kind, not the look of the paragraph beside it. The change is all or "
         "nothing, and it is made only if the document is as it was when read.",
-        epilog="The Google secrets are read from the environment: source env.sh from the secrets "
-        "folder (google-docs-tools-secrets) in the same command. Exit codes: 0 every new "
+        epilog="The Google secrets are read from the environment: run the command through "
+        "lobster-tools' secrets with the set that holds them (secrets run google -- COMMAND …), "
+        "or source a secrets file in the same command."
+        " Exit codes: 0 every new "
         "paragraph put in and found in the document afterwards (with --dry-run: they can be put "
         "in); 2 bad arguments or content file; 3 cannot sign in to Google; 4 Google could not be "
         "reached or answered with an error, or the document changed while this ran; 5 there is "

@@ -45,8 +45,10 @@ def _parser():
         "content deleted\"). --to may name only an address in the setting "
         "COMMENT_RECIPIENTS (commas between, in the settings file ~/.google-docs-tools.conf or "
         "--settings FILE), and the text may hold no other address: Google emails whoever a "
-        "comment names. The Google secrets are read from the environment: source env.sh from "
-        "the secrets folder (google-docs-tools-secrets) in the same command. Exit codes: 0 done; "
+        "comment names. The Google secrets are read from the environment: run the command through "
+        "lobster-tools' secrets with the set that holds them (secrets run google -- COMMAND …), "
+        "or source a secrets file in the same command."
+        " Exit codes: 0 done; "
         "2 bad arguments or settings, or an address not allowed; 3 cannot sign in to Google; 4 "
         "Google could not be reached or answered with an error; 5 there is no such document, "
         "or it is not a Google Doc, or the words are not in it exactly once.",

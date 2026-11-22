@@ -35,8 +35,10 @@ Nothing is ever deleted or binned. The Google layer came from
 - macOS with the command-line developer tools (which give `/usr/bin/python3`, Python 3.9), or
   Linux with Python 3.9 or later. Nothing else: no package to install, no server, no Docker.
 - A Google Cloud project with the Google Docs API and the Google Drive API switched on and an
-  OAuth client of type "Desktop app" (see "One-time set-up"), and a secrets folder beside this
-  checkout, `google-docs-tools-secrets/`.
+  OAuth client of type "Desktop app" (see "One-time set-up"), and the three Google secrets: in
+  Squirrel's projects, the shared set `google` of
+  [lobster-tools](https://github.com/douglassquirrel/lobster-tools)' `secrets` command
+  (`~/projects/secrets/google`); elsewhere, a secrets file of your own.
 - The machine or shell must be able to reach `oauth2.googleapis.com`, `www.googleapis.com` and
   `docs.googleapis.com`; `google-sign-in` also needs a browser on the same machine.
 - Each document must be shared with the Google account the tools sign in as (reading needs at
@@ -53,10 +55,21 @@ git clone git@github.com:douglassquirrel/google-docs-tools.git ~/projects/code/w
 
 ### One-time set-up for Google
 
-Done by a person, in this order. Steps 1 to 4 are in a browser and are not something these tools
-do. The same Google Cloud client as `online-publishing-tools` uses may serve, in which case steps
-1 to 3 are done and the secrets folder gets the same client id and secret (Squirrel's decision
-of 1 November 2026: the secrets may be shared among the relevant tools projects).
+In Squirrel's projects there is nothing to do: these tools and `online-publishing-tools` share one
+set of secrets, `google`, kept by lobster-tools' `secrets` command (22 November 2026), made and
+signed in from `online-publishing-tools`, whose token has every permission these tools ask for and
+more. Check it holds all three names (it prints names only, never a value):
+
+```bash
+~/projects/code/lobster-tools-code/lobster-tools/secrets check google
+```
+
+If Google stops accepting the shared token, sign in again with `online-publishing-tools`'
+`google-sign-in`, never this one: this one asks for fewer permissions, and refuses a file in the
+shared sets.
+
+Elsewhere, with a secrets file of your own, it is done by a person, in this order. Steps 1 to 3 are
+in a browser and are not something these tools do.
 
 1. In the Google Cloud console, in a project inside your organization: switch on the "Google
    Docs API" and the "Google Drive API" (Menu > APIs & Services > Library).
@@ -64,12 +77,12 @@ of 1 November 2026: the secrets may be shared among the relevant tools projects)
    choose the "Internal" audience, finish.
 3. Menu > Google Auth platform > Clients > Create Client > "Desktop app". Copy the client id
    and the client secret.
-4. Make the secrets folder beside this checkout's outer folder, with one file, readable by you
+4. Make a secrets folder (here `~/google-secrets`) with one file, readable by you
    alone:
 
    ```bash
-   mkdir -m 700 ~/projects/code/writing/google-docs-tools-secrets
-   ( umask 177; printf "export GOOGLE_OAUTH_CLIENT_ID=''\nexport GOOGLE_OAUTH_CLIENT_SECRET=''\nexport GOOGLE_OAUTH_REFRESH_TOKEN=''\n" > ~/projects/code/writing/google-docs-tools-secrets/env.sh )
+   mkdir -m 700 ~/google-secrets
+   ( umask 177; printf "export GOOGLE_OAUTH_CLIENT_ID=''\nexport GOOGLE_OAUTH_CLIENT_SECRET=''\nexport GOOGLE_OAUTH_REFRESH_TOKEN=''\n" > ~/google-secrets/env.sh )
    ```
 
    Paste the client id and the client secret between the quotes on their lines.
@@ -77,8 +90,8 @@ of 1 November 2026: the secrets may be shared among the relevant tools projects)
    already holds a refresh token for that account:
 
    ```bash
-   set -a; . ~/projects/code/writing/google-docs-tools-secrets/env.sh; set +a
-   ~/projects/code/writing/google-docs-tools-code/google-docs-tools/google-sign-in --account EMAIL --env-file ~/projects/code/writing/google-docs-tools-secrets/env.sh
+   set -a; . ~/google-secrets/env.sh; set +a
+   ~/projects/code/writing/google-docs-tools-code/google-docs-tools/google-sign-in --account EMAIL --env-file ~/google-secrets/env.sh
    ```
 
    It prints a Google address. Open it in a browser, choose that account, approve Google Docs and
@@ -87,33 +100,40 @@ of 1 November 2026: the secrets may be shared among the relevant tools projects)
 6. If comments are to be addressed to people, write a settings file from
    `google-docs-tools.conf.example` (see "The settings file").
 
-The secrets folder is never a git repository and is never copied. Where a session works on the Mac
-through a connected folder (Claude's device shell), connect this checkout and the secrets folder to
-it: they appear as `$HOME/mnt/google-docs-tools/` and `$HOME/mnt/google-docs-tools-secrets/`.
+A secrets folder is never a git repository and is never copied. Where a session works on the Mac
+through connected folders (a Claude session's device shell), connect this checkout, lobster-tools'
+checkout and the shared set's folder, `~/projects/secrets/google`, to it. They appear under
+`$HOME/mnt/`, and a run there is:
+
+```bash
+python3 "$HOME/mnt/lobster-tools/secrets" run --set-dir "$HOME/mnt/google" --need GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET GOOGLE_OAUTH_REFRESH_TOKEN -- "$HOME/mnt/google-docs-tools/read-doc" DOCUMENT-ID
+```
 
 ## Quick start
 
-Every command needs the three Google secrets in its environment, so each run starts by sourcing
-the secrets file in the same command:
+Every command needs the three Google secrets in its environment, so each run goes through
+lobster-tools' `secrets` command with the shared set (`--need` makes it refuse at once, naming a
+name that is missing or empty; values it might print are masked):
 
 ```bash
-set -a; . ~/projects/code/writing/google-docs-tools-secrets/env.sh; set +a
-./read-doc https://docs.google.com/document/d/DOCUMENT-ID/edit --title
+S=~/projects/code/lobster-tools-code/lobster-tools/secrets
+$S run google --need GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET GOOGLE_OAUTH_REFRESH_TOKEN -- ./read-doc https://docs.google.com/document/d/DOCUMENT-ID/edit --title
 ```
 
-prints the document's name, a blank line, and the document as text. Then
+prints the document's name, a blank line, and the document as text. With a secrets file of your
+own instead, source it in the same command: `set -a; . FILE; set +a; ./read-doc …`. Then
 
 ```bash
-./comment-doc DOCUMENT-ID --add "Is this the right year?" --on "in 1998 the" --dry-run
+$S run google --need GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET GOOGLE_OAUTH_REFRESH_TOKEN -- ./comment-doc DOCUMENT-ID --add "Is this the right year?" --on "in 1998 the" --dry-run
 ```
 
 checks that the words are in the document exactly once and says what it would add, adding nothing;
 without `--dry-run` it adds the comment and prints its id and the document's address with the
-comment selected. `./comment-doc DOCUMENT-ID --list` prints the comments, oldest first. For a
+comment selected. `comment-doc DOCUMENT-ID --list` prints the comments, oldest first. For a
 session that looks at a document every few minutes,
 
 ```bash
-./watch-doc DOCUMENT-ID --snapshot ~/looks/my-book.snapshot
+$S run google --need GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET GOOGLE_OAUTH_REFRESH_TOKEN -- ./watch-doc DOCUMENT-ID --snapshot ~/looks/my-book.snapshot
 ```
 
 makes a snapshot on its first run, and after that prints only what changed since the last one:
@@ -547,9 +567,13 @@ model. A flag, where there is one, wins over the file.
 ### The secrets
 
 Three environment variables, read from the environment and nowhere else, which the commands never
-print: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `GOOGLE_OAUTH_REFRESH_TOKEN`. They
-live in `google-docs-tools-secrets/env.sh` beside this checkout's outer folder; source it in the
-same command as the tool. A missing one stops the command with exit 3 and the line to source.
+print: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `GOOGLE_OAUTH_REFRESH_TOKEN`. In
+Squirrel's projects they are in lobster-tools' shared set `google`: run each command as `secrets run
+google --need GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET GOOGLE_OAUTH_REFRESH_TOKEN -- COMMAND …` (in a device shell, `python3
+"$HOME/mnt/lobster-tools/secrets" run --set-dir "$HOME/mnt/google" … -- …`, as under "One-time
+set-up"). Otherwise source your own secrets file in the same command as the tool. A missing one
+stops the command with exit 3 and how to run it; an empty one, with exit 3 and how to see which are
+set.
 
 ## Errors and exit codes
 
@@ -584,7 +608,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 939 tests, in about 13 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 951 tests, in about 13 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -672,6 +696,11 @@ are still to come.
   file into a document beside a given paragraph.
 - 22 November 2026: `google-sign-in` refuses an `--env-file` inside lobster-tools' shared secrets
   sets; sign in for the shared set `google` with online-publishing-tools' `google-sign-in`.
+- 22 November 2026: the Google secrets now come from lobster-tools' shared set `google`: run each
+  command through `secrets run google --need … -- COMMAND` instead of sourcing
+  `google-docs-tools-secrets/env.sh`, which goes out of use. In a device shell, connect lobster-tools
+  and `~/projects/secrets/google` in its place. The commands' help and their message for a missing
+  secret say so.
 
 ## Contributing
 

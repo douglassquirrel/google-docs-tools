@@ -217,7 +217,7 @@ def test_a_client_value_missing_from_the_environment_is_refused_by_name(
         environment[name] = ""
     result = sign_in(environment=environment)
     assert result.code == 3
-    assert name in result.err and "env.sh" in result.err
+    assert name in result.err and "secrets " in result.err
     assert fake.calls == [] and sign_in.listeners == []
 
 

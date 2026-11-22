@@ -9,11 +9,10 @@ from googledocstools.settings import SettingsError, read_settings
 
 OK, EXISTS, USAGE, SIGN_IN, GOOGLE, UNEXPECTED = 0, 1, 2, 3, 4, 5
 
-SECRETS_FOLDER = "google-docs-tools-secrets"
-SOURCE_LINE = (
-    'set -a; . "<the secrets folder>/env.sh"; set +a   (the folder is '
-    "%s, beside this checkout)" % SECRETS_FOLDER
-)
+# How to give a command the secrets (Settled 13): through lobster-tools' secrets and the set that
+# holds them, or a secrets file sourced in the same command.
+RUN_LINE = ("secrets run google -- COMMAND …   (lobster-tools' secrets, with the shared set google), "
+            'or source a secrets file in the same command: set -a; . FILE; set +a')
 SECRETS = ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_OAUTH_REFRESH_TOKEN")
 DEFAULT_SETTINGS = "~/.google-docs-tools.conf"
 DOC_ID = re.compile(r"[A-Za-z0-9_-]{10,}")
@@ -65,11 +64,11 @@ def secrets(env, names=SECRETS):
     for name in names:
         if name not in env:
             raise Stop(SIGN_IN, "%s is not set, so there is nothing to sign in to Google with. "
-                       "Run this in the same command, first: %s" % (name, SOURCE_LINE))
+                       "Run the command so: %s" % (name, RUN_LINE))
         if not env[name]:
-            raise Stop(SIGN_IN, "%s is empty: it has not been filled in yet in env.sh in the "
-                       "secrets folder (%s, beside this checkout). The README's one-time set-up "
-                       "says where each value comes from." % (name, SECRETS_FOLDER))
+            raise Stop(SIGN_IN, "%s is empty: it has not been filled in yet. secrets check google "
+                       "shows which names the shared set holds; the README's one-time set-up says "
+                       "where each value comes from." % name)
     return [env[name] for name in names]
 
 
