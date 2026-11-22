@@ -608,7 +608,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 951 tests, in about 13 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 954 tests, in about 13 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -633,7 +633,9 @@ them back, each checking again with "everything matches". On 21 November 2026 `i
 put a heading 3, three paragraphs and a three-item list into a scratch document as suggestions
 (Google takes the headings and bullets as part of the suggested text), and `read-doc` read them back
 exactly as written; `check-doc-format` reads suggestions inline, so it reports the new text's look
-before its suggested change until the suggestions are accepted. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+before its suggested change until the suggestions are accepted. On 22 November 2026 `check-doc-format
+--fix` set a heading's bold, then its font, then both back, on a scratch document: Google drops text's
+own bold when its font is set, which the fix now puts back in the same change. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
 in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
 documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;
@@ -696,6 +698,9 @@ are still to come.
   file into a document beside a given paragraph.
 - 22 November 2026: `google-sign-in` refuses an `--env-file` inside lobster-tools' shared secrets
   sets; sign in for the shared set `google` with online-publishing-tools' `google-sign-in`.
+- 22 November 2026: `check-doc-format --fix` no longer takes bold off text whose font it sets (body
+  text and headings alike), and one run sets a heading's font and bold together. Bold it took off
+  before this is not put back by itself.
 - 22 November 2026: the Google secrets now come from lobster-tools' shared set `google`: run each
   command through `secrets run google --need … -- COMMAND` instead of sourcing
   `google-docs-tools-secrets/env.sh`, which goes out of use. In a device shell, connect lobster-tools

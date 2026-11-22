@@ -291,10 +291,25 @@ def _paragraph(styles, structural, part, wanted, place, first_words, body_size):
             problem("looks like a heading")
     requests = []
     start, end = structural["startIndex"], structural["endIndex"]
-    if text_style:
-        requests.append({"updateTextStyle": {
-            "range": {"startIndex": start, "endIndex": end - 1}, "textStyle": text_style,
-            "fields": ",".join(text_style)}})
+    # Google drops a piece's own bold when its font is set (seen 22 November 2026): bold to be set
+    # goes in after the font, and otherwise each piece that was bold of its own is made bold
+    # again, in the same change.
+    after_font = {}
+    if "weightedFontFamily" in text_style and "bold" in text_style:
+        after_font = {"bold": text_style.pop("bold")}
+    for style in (text_style, after_font):
+        if style:
+            requests.append({"updateTextStyle": {
+                "range": {"startIndex": start, "endIndex": end - 1}, "textStyle": style,
+                "fields": ",".join(style)}})
+    if "weightedFontFamily" in text_style and not after_font:
+        for element in paragraph["elements"]:
+            if element.get("textRun", {}).get("textStyle", {}).get("bold") and (
+                    element["startIndex"] < end - 1):
+                requests.append({"updateTextStyle": {
+                    "range": {"startIndex": element["startIndex"],
+                              "endIndex": min(element["endIndex"], end - 1)},
+                    "textStyle": {"bold": True}, "fields": "bold"}})
     if paragraph_style:
         requests.append({"updateParagraphStyle": {
             "range": {"startIndex": start, "endIndex": end}, "paragraphStyle": paragraph_style,

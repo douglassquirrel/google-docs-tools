@@ -597,9 +597,14 @@ class FakeGoogle:
                 for _, style in characters[first:last]:
                     for field in wanted["fields"].split(","):
                         if field in wanted["textStyle"]:
-                            style[field] = wanted["textStyle"][field]
+                            style[field] = copy.deepcopy(wanted["textStyle"][field])
                         else:
                             style.pop(field, None)
+                        if field == "weightedFontFamily" and field in wanted["textStyle"]:
+                            # As seen at Google on 22 November 2026: a font set without a weight
+                            # is held with weight 400, and the text's own bold is gone.
+                            style[field].setdefault("weight", 400)
+                            style.pop("bold", None)
             elif kind == "updateDocumentStyle":
                 if not wanted.get("fields"):
                     return refuse("Invalid requests[%d].updateDocumentStyle: fields" % number)

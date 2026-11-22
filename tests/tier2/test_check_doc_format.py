@@ -243,3 +243,28 @@ def test_fix_from_the_first_chapter_leaves_the_front_matter_and_empty_paragraphs
     after = fake.structured(DOC_ID)
     assert [(p.runs, p.style) if isinstance(p, Para) else p for p in after[:6]] == [
         (p.runs, p.style) if isinstance(p, Para) else p for p in before]
+
+
+def test_one_fix_that_sets_the_font_keeps_each_pieces_own_bold(doc_format, fake):
+    # beyond-ai's Request 07: Google drops a piece's own bold when its font is set (seen
+    # 22 November 2026), so a heading lost its bold until a second run, and a body line for good.
+    arial = {"weightedFontFamily": {"fontFamily": "Arial"}}
+    bold = dict(arial, bold=True)
+    doc_format.document([
+        Para([("A heading", bold)], H3),
+        Para([("A bold label", bold)]),
+        Para([("Some ", arial), ("strong", bold), (" words in a sentence long enough.", arial)]),
+    ])
+    result = doc_format("--fix")
+    assert result.code == 1
+    assert result.out.endswith("After the fix:\nbody text: looks like a heading: 1 paragraph\n"
+                               '  under "### A heading": A bold label\n'
+                               "Format: 1 problem in 1 paragraph.\n")
+    times = {"weightedFontFamily": {"fontFamily": "Times New Roman", "weight": 400}}
+    assert fake.paragraphs(DOC_ID) == [
+        [("A heading", dict(times, bold=True))],
+        [("A bold label", dict(times, bold=True))],
+        [("Some ", times), ("strong", dict(times, bold=True)),
+         (" words in a sentence long enough.", times)]]
+    again = doc_format()
+    assert again.out.splitlines()[-1] == "Format: 1 problem in 1 paragraph."

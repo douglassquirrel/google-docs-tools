@@ -336,3 +336,37 @@ def test_start_at_on_the_first_paragraph_leaves_out_none_and_says_it_was_found()
     checked = check(document(clean()), parse_format(json.dumps(fmt)))
     assert report(checked) == ("Left out: 0 paragraphs before the first heading 2.\n"
                                "Format: everything matches.\n")
+
+
+ARIAL_OWN = {"weightedFontFamily": {"fontFamily": "Arial"}}
+TIMES = {"weightedFontFamily": {"fontFamily": "Times New Roman"}}
+
+
+def test_setting_the_font_gives_back_each_pieces_own_bold_in_the_same_change():
+    # Google drops a piece's own bold when its font is set (seen 22 November 2026).
+    paragraphs = clean() + [Para([("Some ", ARIAL_OWN), ("strong", dict(ARIAL_OWN, bold=True)),
+                                  (" words in a sentence long enough.", ARIAL_OWN)])]
+    described_ = document(paragraphs)
+    start, end = (described_["body"]["content"][-1][key] for key in ("startIndex", "endIndex"))
+    (fix,) = check(described_, parse_format(json.dumps(FORMAT))).fixes
+    assert fix.said == ["font Times New Roman"]
+    assert fix.requests == [
+        {"updateTextStyle": {"range": {"startIndex": start, "endIndex": end - 1},
+                             "textStyle": TIMES, "fields": "weightedFontFamily"}},
+        {"updateTextStyle": {"range": {"startIndex": start + 5, "endIndex": start + 11},
+                             "textStyle": {"bold": True}, "fields": "bold"}},
+    ]
+
+
+def test_a_heading_given_its_font_and_its_bold_gets_the_bold_after_the_font():
+    paragraphs = clean() + [Para([("Plain heading", dict(ARIAL_OWN, bold=False))], H3)]
+    described_ = document(paragraphs)
+    start, end = (described_["body"]["content"][-1][key] for key in ("startIndex", "endIndex"))
+    (fix,) = check(described_, parse_format(json.dumps(FORMAT))).fixes
+    assert fix.said == ["font Times New Roman", "bold on"]
+    assert fix.requests == [
+        {"updateTextStyle": {"range": {"startIndex": start, "endIndex": end - 1},
+                             "textStyle": TIMES, "fields": "weightedFontFamily"}},
+        {"updateTextStyle": {"range": {"startIndex": start, "endIndex": end - 1},
+                             "textStyle": {"bold": True}, "fields": "bold"}},
+    ]
