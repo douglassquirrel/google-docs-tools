@@ -203,7 +203,7 @@ command says to `--list` before trying again.
 
     watch-doc DOC --snapshot FILE [--dry-run] [--settings FILE] [--note-open TEXT] [--note-close TEXT]
               [--placeholder-open TEXT] [--placeholder-close TEXT] [--skip-doubled yes|no] [--timeout SECONDS]
-              [--wait [--every SECONDS] [--for SECONDS]]
+              [--wait [--every SECONDS] [--for SECONDS] [--settle SECONDS]]
 
 The first line is always one summary line, with the time of the look: `2026-11-01 19:45 UTC: nothing
 new`, or a count of each kind of thing that is new. Every call to Google is a read. Without
@@ -267,6 +267,19 @@ background command, for example from a Claude Code session:
 
 A shell whose calls are cut off after a few minutes (a Claude session's device shell) cannot run a
 `--wait`; there, run single looks on a schedule as before.
+
+**`--settle SECONDS`: wake only when the writer pauses.** With `--wait --settle 120`, a look that
+finds something new does not end the wait: it looks again every 120 seconds, and returns at the
+first look that finds nothing changed since the look before, with one report of everything changed
+since the wait began (the snapshot it started from, compared with the document at the end), printed
+as a single look prints it, exit 0. A paragraph changed three times shows once, from start to end;
+a note typed in two goes shows once, whole. Before anything changes it looks every `--every` seconds;
+`--for` still bounds the whole wait, so a writer who never pauses gets everything when it runs out
+(exit 0), and with nothing new at all it is exit 6 as before. Changes undone before it settles are
+nothing new. The snapshot is saved only when it reports, so a look that fails while it settles ends
+it with that look's exit code, saying the changes were seen and not reported, and the next run
+reports them. With no snapshot yet the first look returns at once. `--settle` without `--wait`,
+under 30 or over `--for` is exit 2.
 
 ### `insert-picture`: a picture where some words are
 
@@ -635,7 +648,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 980 tests, in about 14 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 994 tests, in about 12 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -727,6 +740,8 @@ are still to come.
   file into a document beside a given paragraph.
 - 22 November 2026: `google-sign-in` refuses an `--env-file` inside lobster-tools' shared secrets
   sets; sign in for the shared set `google` with online-publishing-tools' `google-sign-in`.
+- 22 November 2026: `watch-doc --wait --settle SECONDS` returns only once the document has stood
+  still that long, with one report of all that changed since the wait began.
 - 22 November 2026: `watch-doc --wait` (with `--every` and `--for`) looks again and again and returns
   when a look finds something new (exit 0), or after 45 minutes of nothing new (exit 6, a new exit
   code). Without `--wait`, `watch-doc` is as before, but that Ctrl-C now ends any run with a plain
