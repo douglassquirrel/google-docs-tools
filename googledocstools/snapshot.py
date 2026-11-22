@@ -213,14 +213,24 @@ def _counted(count, one, several):
     return "%d %s" % (count, one if count == 1 else several)
 
 
+def _kinds(changed, new_notes, notes_gone, compared):
+    """How much of each kind a look found: (count, said of one, said of several)."""
+    return ((changed, "paragraph changed", "paragraphs changed"),
+            (new_notes, "new note", "new notes"),
+            (notes_gone, "note gone", "notes gone"),
+            (compared.comments, "new comment", "new comments"),
+            (compared.replies, "new reply", "new replies"),
+            (compared.resolved, "comment resolved", "comments resolved"),
+            (compared.reopened, "comment reopened", "comments reopened"))
+
+
+def anything_new(changed, new_notes, notes_gone, compared):
+    """Whether a look found anything its summary counts."""
+    return any(count for count, _, _ in _kinds(changed, new_notes, notes_gone, compared))
+
+
 def summary(now, changed, new_notes, notes_gone, compared):
     """The first line of a look: its time, and how much of each kind is new; or nothing new."""
-    new = [_counted(count, one, several) for count, one, several in (
-        (changed, "paragraph changed", "paragraphs changed"),
-        (new_notes, "new note", "new notes"),
-        (notes_gone, "note gone", "notes gone"),
-        (compared.comments, "new comment", "new comments"),
-        (compared.replies, "new reply", "new replies"),
-        (compared.resolved, "comment resolved", "comments resolved"),
-        (compared.reopened, "comment reopened", "comments reopened")) if count]
+    new = [_counted(count, one, several)
+           for count, one, several in _kinds(changed, new_notes, notes_gone, compared) if count]
     return "%s: %s" % (now, ", ".join(new) or "nothing new")

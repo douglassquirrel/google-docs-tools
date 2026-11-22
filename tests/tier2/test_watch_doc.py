@@ -428,3 +428,142 @@ def test_the_command_runs_from_any_folder(tmp_path):
         check=False,
     )
     assert done.returncode == 0 and "--snapshot" in done.stdout and done.stderr == ""
+
+
+# --- --wait: look every few minutes, return when something is new (Request 34) ----------------
+
+CHANGED = [Styled("HEADING_1", "One"), "A paragraph of changed words here.",
+           Styled("HEADING_2", "Two"), "Another paragraph of plain words.",
+           "A third paragraph of plain words."]
+
+
+def leftovers(watch):
+    return sorted(path.name for path in watch.file.parent.iterdir() if path.name.startswith("."))
+
+
+def test_help_names_the_wait_its_timing_and_its_exit_code(watch, fake):
+    result = watch("--help", defaults=False)
+    out = " ".join(result.out.split())
+    for word in ("--wait", "--every", "--for", "6 nothing new"):
+        assert word in out
+    assert fake.calls == []
+
+
+def test_wait_with_no_snapshot_returns_at_once_with_the_first_look(watch):
+    watch.document(HEADED)
+    result = watch("--wait")
+    assert (result.code, result.err) == (0, "")
+    assert result.out.startswith("%s: no snapshot yet, so one was made\n" % NOW)
+    assert watch.time.slept == [] and watch.file.exists()
+
+
+def test_wait_with_nothing_new_returns_after_for_with_one_line_and_exit_6(watch):
+    _looked(watch)
+    result = watch("--wait", "--every", "60", "--for", "180")
+    assert (result.code, result.err) == (6, "")
+    assert result.out == "2026-11-01 19:43 UTC: nothing new in 3 minutes (4 looks)\n"
+    assert watch.time.slept == [60, 60, 60]
+    assert snapshot.read(watch.file.read_text(encoding="utf-8")).taken == "2026-11-01 19:43 UTC"
+
+
+def test_wait_looks_every_five_minutes_for_45_minutes_unless_told(watch):
+    _looked(watch)
+    result = watch("--wait")
+    assert result.code == 6
+    assert result.out == "2026-11-01 20:25 UTC: nothing new in 45 minutes (10 looks)\n"
+    assert watch.time.slept == [300] * 9
+
+
+def test_wait_returns_with_the_look_that_found_a_change_as_a_plain_run_prints_it(watch, tmp_path):
+    _looked(watch)
+    other = tmp_path / "the same, looked at without --wait.snapshot"
+    other.write_bytes(watch.file.read_bytes())
+    watch.time.then[2] = lambda: watch.document(CHANGED)
+    result = watch("--wait", "--every", "60", "--for", "600")
+    assert (result.code, result.err) == (0, "")
+    assert watch.time.slept == [60, 60]
+    assert result.out.startswith("2026-11-01 19:42 UTC: 1 paragraph changed\n")
+    plain = watch(DOC_ID, "--snapshot", str(other), defaults=False)
+    assert (plain.code, plain.out) == (0, result.out)
+
+
+@pytest.mark.parametrize("after,said", [
+    ([_comment("c1"), _comment("c2")], "1 new comment"),
+    ([_comment("c1", resolved=True)], "1 comment resolved"),
+    ([_comment("c1", replies=[_reply("r1")])], "1 new reply"),
+])
+def test_wait_counts_a_comment_alone_as_news(watch, after, said):
+    _looked(watch, comments=[_comment("c1")])
+    watch.time.then[1] = lambda: watch.comments(after)
+    result = watch("--wait", "--every", "60", "--for", "600")
+    assert result.code == 0
+    assert result.out.splitlines()[0] == "2026-11-01 19:41 UTC: " + said
+
+
+def test_a_failed_look_ends_the_wait_at_once_with_exit_4_and_no_retry(watch, fake):
+    _looked(watch)
+    watch.time.then[1] = lambda: fake.unreachable.add("docs.googleapis.com")
+    result = watch("--wait", "--every", "60", "--for", "600")
+    assert result.code == 4 and result.out == ""
+    assert "reading the document" in result.err
+    assert watch.time.slept == [60]
+
+
+def test_a_missing_secret_or_another_documents_snapshot_ends_the_wait_at_once(watch, fake, env):
+    _looked(watch)
+    environment = dict(env)
+    del environment["GOOGLE_OAUTH_REFRESH_TOKEN"]
+    calls = len(fake.calls)
+    assert watch("--wait", environment=environment).code == 3
+    assert len(fake.calls) == calls and watch.time.slept == []
+    other = watch("other-document-id-0123", "--snapshot", str(watch.file), "--wait",
+                  defaults=False)
+    assert other.code == 2 and watch.time.slept == []
+
+
+@pytest.mark.parametrize("stop,code", [("interrupt", 130), ("terminate", 143)])
+def test_stopped_while_waiting_it_ends_quietly_and_the_snapshot_is_whole(watch, stop, code):
+    import signal
+
+    _looked(watch)
+    kept = watch.file.read_bytes()
+    handler = signal.getsignal(signal.SIGTERM)
+
+    def stopping():
+        if stop == "interrupt":
+            raise KeyboardInterrupt
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    watch.time.then[1] = stopping
+    result = watch("--wait", "--every", "60", "--for", "600")
+    assert (result.code, result.out) == (code, "")
+    assert result.err == "watch-doc: stopped; the snapshot of the last look is kept.\n"
+    assert snapshot.read(watch.file.read_text(encoding="utf-8")).text == snapshot.read(
+        kept.decode("utf-8")).text
+    assert leftovers(watch) == [] and signal.getsignal(signal.SIGTERM) is handler
+
+
+def test_stopped_while_saving_it_leaves_no_temporary_file(watch, monkeypatch):
+    _looked(watch)
+    kept = watch.file.read_bytes()
+
+    def stopped(*args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(watch_doc.os, "replace", stopped)
+    result = watch("--wait", "--every", "60", "--for", "600")
+    assert result.code == 130 and leftovers(watch) == []
+    assert watch.file.read_bytes() == kept
+
+
+@pytest.mark.parametrize("argv,told", [
+    (("--every", "60"), "--every and --for go with --wait"),
+    (("--for", "600"), "--every and --for go with --wait"),
+    (("--wait", "--every", "10"), "--every must be at least 60"),
+    (("--wait", "--every", "400", "--for", "300"), "--every must not be more than --for"),
+    (("--wait", "--every", "soon"), "--every"),
+])
+def test_wait_timing_that_makes_no_sense_is_exit_2_and_nothing_is_contacted(
+        watch, fake, argv, told):
+    result = watch(*argv)
+    assert result.code == 2 and told in result.err and fake.calls == []

@@ -1,6 +1,6 @@
 """Running the commands' main() against the stand-in. From online-publishing-tools' tier 2
 conftest (1 November 2026), for a document given by its id."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -196,6 +196,25 @@ def read(fake, env, capsys):
     return run
 
 
+class Time:
+    """The clock for watch-doc: 19:40 UTC on 1 November 2026, moving on only when it waits. Each
+    wait is recorded; then[N], if given, is called after the Nth wait (to change the document)."""
+
+    def __init__(self):
+        self.now = datetime(2026, 11, 1, 19, 40, tzinfo=timezone.utc)
+        self.slept = []
+        self.then = {}
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += timedelta(seconds=seconds)
+        if len(self.slept) in self.then:
+            self.then[len(self.slept)]()
+
+
 @pytest.fixture
 def watch(fake, env, tmp_path, capsys):
     """Run watch-doc against a document, with a snapshot of its own and the clock fixed."""
@@ -203,6 +222,7 @@ def watch(fake, env, tmp_path, capsys):
 
     fake.add_described(DOC_ID, DOC_NAME, ["root"], ["# unused"])
     file = tmp_path / "a look.snapshot"
+    time = Time()
     home = tmp_path / "home"
     home.mkdir()
     settings = home / ".google-docs-tools.conf"
@@ -213,8 +233,7 @@ def watch(fake, env, tmp_path, capsys):
             args = [DOC_ID, "--snapshot", str(file)] + args
         code = watch_doc.main(
             args, env=env if environment is None else environment, send=fake,
-            default_settings=str(settings),
-            clock=lambda: datetime(2026, 11, 1, 19, 40, tzinfo=timezone.utc))
+            default_settings=str(settings), clock=time.clock, sleep=time.sleep)
         captured = capsys.readouterr()
         for secret in SECRETS:
             assert secret not in captured.out and secret not in captured.err
@@ -229,6 +248,7 @@ def watch(fake, env, tmp_path, capsys):
 
     run.document = document
     run.comments = comments
+    run.time = time
     run.file = file
     run.settings = settings
     return run

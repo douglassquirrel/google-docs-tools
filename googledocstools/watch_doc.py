@@ -8,8 +8,10 @@ import argparse
 import contextlib
 import datetime
 import os
+import signal
 import sys
 import tempfile
+import time
 
 from googledocstools import comments, google, snapshot
 from googledocstools.cli import (
@@ -37,6 +39,35 @@ MARKERS = (("--note-open", "NOTE_OPEN", "["), ("--note-close", "NOTE_CLOSE", "]"
            ("--placeholder-open", "PLACEHOLDER_OPEN", "{"),
            ("--placeholder-close", "PLACEHOLDER_CLOSE", "}"))
 DOUBLED = "SKIP_DOUBLED"
+NOTHING_NEW = 6  # --wait: no look found anything new in --for seconds
+EVERY, FOR, LEAST = 300, 2700, 60  # --wait's timing, in seconds: the defaults and the floor
+STOPPED = "stopped; the snapshot of the last look is kept."
+
+
+class _Stopped(Exception):
+    """The process was told to stop (SIGTERM) while it waited."""
+
+
+def _whole_seconds(text):
+    if not text.isdigit() or int(text) == 0:
+        raise argparse.ArgumentTypeError("%r is not a whole number of seconds" % text)
+    return int(text)
+
+
+def _timing(args):
+    """(every, for) in seconds for --wait; or stop if they make no sense."""
+    if not args.wait:
+        if args.every is not None or args.for_ is not None:
+            raise Stop(USAGE, "--every and --for go with --wait; without it watch-doc looks once.")
+        return None, None
+    every = EVERY if args.every is None else args.every
+    for_ = FOR if args.for_ is None else args.for_
+    if every < LEAST:
+        raise Stop(USAGE, "--every must be at least %d seconds, so as not to ask Google too "
+                   "often." % LEAST)
+    if every > for_:
+        raise Stop(USAGE, "--every must not be more than --for (%d seconds)." % for_)
+    return every, for_
 
 
 def _parser():
@@ -55,8 +86,12 @@ def _parser():
         "Google secrets are read from the environment: run the command through lobster-tools' "
         "secrets with the set that holds them (secrets run google -- COMMAND …), or source a "
         "secrets file in the same command."
-        " Exit codes: 0 the look worked, whether "
-        "or not anything is new (the summary line says which); 2 bad arguments or settings, or a "
+        " With --wait it looks every --every seconds and returns with the first look that finds "
+        "anything new, printed as above; after --for seconds of nothing new it prints one line "
+        "saying so. Exit codes: 0 the look worked, whether "
+        "or not anything is new (the summary line says which), or with --wait a look found "
+        "something new; 6 nothing new in --for seconds (--wait); 130 or 143 stopped while "
+        "waiting; 2 bad arguments or settings, or a "
         "--snapshot file that is not this command's snapshot of this document; 3 cannot sign in "
         "to Google; 4 Google could not be reached or answered with an error; 5 there is no such "
         "document, or it is not a Google Doc, or the snapshot could not be written.",
@@ -69,6 +104,16 @@ def _parser():
         help="the snapshot of the last look, written over with this one; made if it is not there")
     parser.add_argument(
         "--dry-run", action="store_true", help="do the look and print it, but save no snapshot")
+    parser.add_argument(
+        "--wait", action="store_true",
+        help="look again and again, and return when a look finds anything new (exit 0) or "
+        "after --for seconds of nothing new (exit 6); a look that fails ends it at once")
+    parser.add_argument(
+        "--every", metavar="SECONDS", type=_whole_seconds,
+        help="with --wait, the seconds between looks (default: %d; at least %d)" % (EVERY, LEAST))
+    parser.add_argument(
+        "--for", metavar="SECONDS", type=_whole_seconds, dest="for_",
+        help="with --wait, how long to look before giving up (default: %d)" % FOR)
     parser.add_argument(
         "--settings", metavar="FILE",
         help="the settings file (default: ~/.google-docs-tools.conf, if it exists)")
@@ -135,10 +180,12 @@ def _save(path, text):
         with os.fdopen(handle, "w", encoding="utf-8", newline="") as written:
             written.write(text)
         os.replace(temporary, path)
-    except OSError as error:
+    except BaseException as error:  # a stop while saving leaves nothing beside the snapshot
         if temporary is not None:
             with contextlib.suppress(OSError):
                 os.unlink(temporary)
+        if not isinstance(error, OSError):
+            raise
         raise Stop(UNEXPECTED, "The look above was printed, but the snapshot %s was not written: "
                    "%s. What was there is as it was, so the next look will report the same "
                    "again." % (path, error.strerror))
@@ -160,7 +207,7 @@ def _first_look(when, found, document, markers, dry_run):
 
 
 def _later_look(when, before, text, seen, found):
-    """The lines of a look compared with the snapshot before."""
+    """The lines of a look compared with the snapshot before, and whether anything is new."""
     changed = snapshot.changes(before.text, text)
     fresh = snapshot.newly([note for note, _ in before.notes], seen)
     gone = snapshot.newly([note for note, _ in seen], before.notes)
@@ -170,7 +217,7 @@ def _later_look(when, before, text, seen, found):
                         ("Notes gone", _noted(gone)), ("Comments", compared.lines)):
         if part:
             lines += ["== %s ==" % title] + part
-    return lines
+    return lines, snapshot.anything_new(len(changed), len(fresh), len(gone), compared)
 
 
 def _read(args, env, send):
@@ -193,28 +240,60 @@ def _read(args, env, send):
                    "the snapshot was left as it was." % (progress.step, said(error)))
 
 
-def _run(args, env, send, default_settings, out, clock):
-    markers = _markers(args, default_settings)
+def _stamp(clock):
+    return clock().astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _look(args, env, send, markers, out, clock):
+    """One look: printed if anything is new (always, without --wait), the snapshot saved after.
+    Whether anything was new; a first look always is."""
     before = _before(args.snapshot, args.document)
     described, found = _read(args, env, send)
     document = paragraphs(described)
     text = as_text(document)
     seen = notes(document, markers)
-    when = clock().astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    when = _stamp(clock)
     if before is None:
-        lines = _first_look(when, found, document, markers, args.dry_run)
+        lines, new = _first_look(when, found, document, markers, args.dry_run), True
     else:
-        lines = _later_look(when, before, text, seen, found)
-    out.write("\n".join(lines) + "\n")
+        lines, new = _later_look(when, before, text, seen, found)
+    if new or not args.wait:
+        out.write("\n".join(lines) + "\n")
+        out.flush()
     if not args.dry_run:
         _save(args.snapshot, snapshot.make(snapshot.Snapshot(
             args.document, when, seen, snapshot.comment_state(found), text)))
-    return OK
+    return new
 
 
-def main(argv, env=None, send=None, default_settings=None, clock=None):
-    """Run the command; the exit code. clock() is the time now, with its time zone."""
+def _run(args, env, send, default_settings, out, clock, sleep):
+    every, for_ = _timing(args)
+    markers = _markers(args, default_settings)
+    start, looks = clock(), 0
+    while True:
+        new = _look(args, env, send, markers, out, clock)
+        looks += 1
+        if new or not args.wait:
+            return OK
+        waited = (clock() - start).total_seconds()
+        if waited + every > for_:
+            break
+        sleep(every)
+    minutes = round(waited / 60)
+    out.write("%s: nothing new in %d minute%s (%d looks)\n" % (
+        _stamp(clock), minutes, "" if minutes == 1 else "s", looks))
+    return NOTHING_NEW
+
+
+def _stop(number, frame):
+    raise _Stopped()
+
+
+def main(argv, env=None, send=None, default_settings=None, clock=None, sleep=None):
+    """Run the command; the exit code. clock() is the time now, with its time zone; sleep(n)
+    waits n seconds."""
     clock = (lambda: datetime.datetime.now(datetime.timezone.utc)) if clock is None else clock
+    sleep = time.sleep if sleep is None else sleep
     env = os.environ if env is None else env
     send = google.https_send if send is None else send
     if default_settings is None:
@@ -223,8 +302,15 @@ def main(argv, env=None, send=None, default_settings=None, clock=None):
         args = _parser().parse_args(argv)
     except SystemExit as stop:
         return stop.code
+    handler = signal.signal(signal.SIGTERM, _stop) if args.wait else None
     try:
-        return _run(args, env, send, default_settings, sys.stdout, clock)
+        return _run(args, env, send, default_settings, sys.stdout, clock, sleep)
     except Stop as stop:
         sys.stderr.write("%s: %s\n" % (COMMAND, stop.message))
         return stop.code
+    except (KeyboardInterrupt, _Stopped) as stopped:
+        sys.stderr.write("%s: %s\n" % (COMMAND, STOPPED))
+        return 130 if isinstance(stopped, KeyboardInterrupt) else 143
+    finally:
+        if args.wait:
+            signal.signal(signal.SIGTERM, handler)

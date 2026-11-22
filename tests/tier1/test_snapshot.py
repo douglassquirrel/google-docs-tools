@@ -324,3 +324,21 @@ def test_the_summary_line_counts_each_kind_that_is_not_none_in_order():
         "2 comments resolved, 2 comments reopened")
     assert snapshot.summary("T", 0, 0, 1, snapshot.Compared([], 0, 1, 1, 1)) == (
         "T: 1 note gone, 1 new reply, 1 comment resolved, 1 comment reopened")
+
+
+@pytest.mark.parametrize("counts,new", [
+    ((0, 0, 0, (0, 0, 0, 0)), False),
+    ((1, 0, 0, (0, 0, 0, 0)), True),
+    ((0, 1, 0, (0, 0, 0, 0)), True),
+    ((0, 0, 1, (0, 0, 0, 0)), True),
+    ((0, 0, 0, (1, 0, 0, 0)), True),
+    ((0, 0, 0, (0, 1, 0, 0)), True),
+    ((0, 0, 0, (0, 0, 1, 0)), True),
+    ((0, 0, 0, (0, 0, 0, 1)), True),
+])
+def test_a_look_is_news_when_its_summary_counts_anything(counts, new):
+    changed, fresh, gone, comment_counts = counts
+    compared = snapshot.Compared(["a line"] if any(comment_counts) else [], *comment_counts)
+    assert snapshot.anything_new(changed, fresh, gone, compared) is new
+    assert snapshot.summary("now", changed, fresh, gone, compared).endswith(
+        "nothing new") is not new

@@ -203,10 +203,11 @@ command says to `--list` before trying again.
 
     watch-doc DOC --snapshot FILE [--dry-run] [--settings FILE] [--note-open TEXT] [--note-close TEXT]
               [--placeholder-open TEXT] [--placeholder-close TEXT] [--skip-doubled yes|no] [--timeout SECONDS]
+              [--wait [--every SECONDS] [--for SECONDS]]
 
 The first line is always one summary line, with the time of the look: `2026-11-01 19:45 UTC: nothing
-new`, or a count of each kind of thing that is new. Every call to Google is a read. Scheduling the
-looks is up to whoever runs it.
+new`, or a count of each kind of thing that is new. Every call to Google is a read. Without
+`--wait`, scheduling the looks is up to whoever runs it.
 
 With no file at `--snapshot` it makes one, and prints the notes, each with a few words around it,
 then how many placeholders there are and how many comments are open:
@@ -242,6 +243,30 @@ With a snapshot it compares and prints only what changed, in these parts, each l
 The snapshot holds the document's text, so it is written readable by its owner alone. It is written
 beside FILE and moved into place after the look is printed, so a failure leaves the old one, and is
 saved on every run that gets that far, whether or not anything was new.
+
+**`--wait`: one background command that looks every few minutes.** It looks as above, and if
+nothing is new it waits `--every` seconds (default 300, at least 60) and looks again, saving the
+snapshot after each look. It returns as soon as a look finds anything the summary line counts
+(paragraphs changed, notes new or gone, comments new, replied to, resolved or reopened), printing
+that look just as a run without `--wait` would, with exit 0; with no snapshot yet, the first look
+returns at once. After `--for` seconds (default 2700, 45 minutes) with nothing new it prints one line
+and exits 6:
+
+    2026-11-01 20:25 UTC: nothing new in 45 minutes (10 looks)
+
+A look that fails ends it at once, as a run without `--wait` does (exit 4, or 2, 3 or 5); it never
+tries again by itself. Stopped while it waits (the session stops it, or Ctrl-C), it says so on
+standard error and exits 143 (or 130), leaving the snapshot of its last look whole and nothing
+beside it. `--every` and `--for` without `--wait`, `--every` under 60, or `--every` over `--for` are
+exit 2. A highlight added on its own is not seen, so it does not end the wait. Run it as a
+background command, for example from a Claude Code session:
+
+```bash
+~/projects/code/lobster-tools-code/lobster-tools/secrets run google --need GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET GOOGLE_OAUTH_REFRESH_TOKEN -- ./watch-doc DOCUMENT-ID --snapshot ~/looks/my-book.snapshot --wait
+```
+
+A shell whose calls are cut off after a few minutes (a Claude session's device shell) cannot run a
+`--wait`; there, run single looks on a schedule as before.
 
 ### `insert-picture`: a picture where some words are
 
@@ -580,6 +605,8 @@ set.
 | Code | Meaning |
 |---|---|
 | 0 | Done (or, with `--dry-run`, checked). For `watch-doc`, the look worked, whether or not anything is new: the summary line says which. |
+| 6 | `watch-doc --wait`: nothing new in `--for` seconds. |
+| 130, 143 | `watch-doc --wait`: stopped while it waited (Ctrl-C, or told to stop); the snapshot of its last look is kept. |
 | 1 | `check-typography`: something to fix. `check-doc-format`: something does not match the format (after the fix, with `--fix`). |
 | 2, for `edit-doc` and `check-doc-format` | Also: an edits or format file that cannot be read, is not JSON in UTF-8, or has faults; every fault is named. Nothing is contacted. |
 | 2, for `insert-paragraphs` | Also: a content file that cannot be read, is not UTF-8, or has faults (each named with its line), or holds the words of `--after` or `--before`; neither of those given, or words empty or with a line break. Nothing is contacted. |
@@ -608,7 +635,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 954 tests, in about 13 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 980 tests, in about 14 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -698,6 +725,10 @@ are still to come.
   file into a document beside a given paragraph.
 - 22 November 2026: `google-sign-in` refuses an `--env-file` inside lobster-tools' shared secrets
   sets; sign in for the shared set `google` with online-publishing-tools' `google-sign-in`.
+- 22 November 2026: `watch-doc --wait` (with `--every` and `--for`) looks again and again and returns
+  when a look finds something new (exit 0), or after 45 minutes of nothing new (exit 6, a new exit
+  code). Without `--wait`, `watch-doc` is as before, but that Ctrl-C now ends any run with a plain
+  message, not a traceback.
 - 22 November 2026: `check-doc-format --fix` no longer takes bold off text whose font it sets (body
   text and headings alike), and one run sets a heading's font and bold together. Bold it took off
   before this is not put back by itself.
