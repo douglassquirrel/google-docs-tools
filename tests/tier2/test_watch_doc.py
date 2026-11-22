@@ -601,6 +601,15 @@ def test_settle_with_no_change_at_all_is_exit_6_as_without_it(watch):
         6, "2026-11-01 19:43 UTC: nothing new in 3 minutes (4 looks)\n")
 
 
+def test_settle_keeps_to_every_while_nothing_changes_though_looks_take_time(watch):
+    # Seen at Google, 22 November 2026: --every 60 --for 120 --settle 30 made 2 looks, not 3.
+    _looked(watch)
+    watch.time.drift = 2
+    result = watch("--wait", "--every", "60", "--for", "180", "--settle", "30")
+    assert result.code == 6
+    assert result.out.endswith(": nothing new in 3 minutes (4 looks)\n")
+
+
 def test_settle_returns_once_the_document_has_stood_still_with_what_changed(watch, tmp_path):
     _looked(watch)
     kept = watch.file.read_bytes()

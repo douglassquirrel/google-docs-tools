@@ -307,7 +307,9 @@ def _settling(args, env, send, markers, out, clock, sleep, every, for_):
         when = _stamp(clock)
         lines, new = _later_look(when, base, text, seen, found)
         now = (text, seen, snapshot.comment_state(found))
-        due = looked + (args.settle if new else every)
+        # The next look: --settle seconds on while something is new; otherwise the next on the
+        # timetable of one every --every seconds from the first, so slow looks lose none.
+        due = looked + args.settle if new else (int(looked // every) + 1) * every
         if new and (now == previous or due > for_):
             out.write("\n".join(lines) + "\n")
             out.flush()
