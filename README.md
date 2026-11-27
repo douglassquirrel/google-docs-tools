@@ -745,7 +745,9 @@ Google takes a footnote as a suggestion, starts the footnote with a space, and p
 a second change into the same suggestion. The same day `read-doc --footnotes` listed it, and
 `insert-footnote` suggested a second footnote with an italic title and a link, taking out the words
 after its mark, and found it as written (Google numbered it 2, after the first); its dry runs and
-refusals (words there seven times, words not there) changed nothing. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+refusals (words there seven times, words not there) changed nothing. Then `check-doc-format` with only a
+`footnote` part reported both footnotes' font and size, and `--fix` set them (Times New Roman 10),
+keeping the italic title and the link; the check after found everything matching. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
 in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
 documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;
