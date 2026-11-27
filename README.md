@@ -737,7 +737,10 @@ own bold when its font is set, which the fix now puts back in the same change. T
 new (exit 6, 3 looks), and a stop (exit 143, the snapshot whole, nothing beside it). On 27 November
 2026, before `insert-footnote` was written, one footnote was suggested by hand on a scratch document:
 Google takes a footnote as a suggestion, starts the footnote with a space, and puts the text given in
-a second change into the same suggestion. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+a second change into the same suggestion. The same day `read-doc --footnotes` listed it, and
+`insert-footnote` suggested a second footnote with an italic title and a link, taking out the words
+after its mark, and found it as written (Google numbered it 2, after the first); its dry runs and
+refusals (words there seven times, words not there) changed nothing. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
 in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
 documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;
@@ -751,7 +754,11 @@ are still to come.
   `--footnotes` (a footnote's place is marked), and not pictures (a paragraph that is only a picture
   is left out).
 - `insert-footnote` writes a footnote of one paragraph, and never changes a footnote already there;
-  `edit-doc` cannot change a footnote's text either.
+  `edit-doc` cannot change a footnote's text either. Nothing here deletes a footnote: reject a
+  suggested one, or delete one, in Google Docs.
+- `read-doc` reads with pending suggestions inline, where Google holds a suggested footnote's italic
+  and links as a suggested change of look: `--footnotes` shows them once the suggestion is accepted
+  (seen 27 November 2026). `insert-footnote` checks its footnote as with suggestions accepted.
 - A numbered list is written in figures whatever the document shows: an item shown as `b.` or
   `ii.` comes out as `2. `. A numbered heading has its number first (`1. ## Heading`).
 - `watch-doc` does not see a highlight, an underline, a font or a picture changing, a comment
