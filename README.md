@@ -18,7 +18,7 @@ Nothing is ever deleted or binned. The Google layer came from
 
 | Command | Job |
 |---|---|
-| `read-doc` | Print a Google Doc as text: headings with `#`, **bold**, *italic*, links, list items, a `---` for a rule. Reads only. |
+| `read-doc` | Print a Google Doc as text: headings with `#`, **bold**, *italic*, links, list items, a `---` for a rule; with `--footnotes`, the footnotes too. Reads only. |
 | `comment-doc` | Add a comment on some of the document's words, addressed to a named person if wanted; or list the document's comments. |
 | `watch-doc` | One quiet look at a document and its comments: only what changed since the last look. Reads only, and writes its own snapshot file. |
 | `insert-picture` | Put a picture where some words stand alone in their paragraph, from a file or an address, with a caption and a link if wanted. |
@@ -27,6 +27,7 @@ Nothing is ever deleted or binned. The Google layer came from
 | `check-typography` | List straight quotes and apostrophes, double hyphens and spaced hyphens, with the curly quote or en dash each should be. Reads only. |
 | `edit-doc` | Make a list of find → replace edits in a document, as suggestions to accept or reject, or outright. The list has the shape of word-tools' `propose-edits` list. |
 | `insert-paragraphs` | Put new paragraphs (headings, text, bulleted list items) written in a file into a document, after or before a given paragraph, as suggestions or outright. |
+| `insert-footnote` | Put a footnote with the caller's text straight after given words, optionally taking out a bracketed note there, as a suggestion or outright. |
 | `check-doc-format` | Check a document against a house format (page, body text, list items, title and headings) and, with `--fix`, set it right, formatting only. |
 | `google-sign-in` | Run once, by a person: sign in to Google in a browser and store the token the other tools use. |
 
@@ -154,7 +155,7 @@ or its whole address.
 
 ### `read-doc`: the document as text
 
-    read-doc DOC [--title] [--highlights] [--timeout SECONDS]
+    read-doc DOC [--title] [--highlights] [--footnotes] [--timeout SECONDS]
 
 Prints the body as text: the title and headings with one `#` per level (the title counts as
 level 1), `**bold**`, `*italic*`, `[words](address)` for a link, list items with `- ` or their number
@@ -167,7 +168,16 @@ place. Empty paragraphs are left out. Every call to Google is a read.
 |---|---|
 | `--title` | Print the document's name first, as a line, then a blank line. |
 | `--highlights` | Mark highlighted text (a background colour that is not a link) as `{==text==}`. |
+| `--footnotes` | After the body, list each footnote in the order of its mark: its number, up to six words before the mark, and its text in the same markup (paragraphs of one footnote joined with ` / `). |
 | `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
+With `--footnotes` the body is as without it, and then:
+
+    <!-- footnotes -->
+    1 | A quoted line | Jo Bloggs, *A Made-Up Book*, p. 3.
+    2 | Another “quote” | https://example.org/an-article
+
+or `<!-- footnotes: none -->`.
 
 ### `comment-doc`: a comment on some words, or the list of comments
 
@@ -613,6 +623,48 @@ set-up"). Otherwise source your own secrets file in the same command as the tool
 stops the command with exit 3 and how to run it; an empty one, with exit 3 and how to see which are
 set.
 
+### `insert-footnote`: a footnote after given words
+
+    insert-footnote DOC --after WORDS --text TEXT [--remove WORDS] [--direct] [--dry-run] [--timeout SECONDS]
+
+Puts a footnote mark straight after `--after`'s words and the footnote's text into it, as a Google
+Docs suggestion for its editors to accept or reject, or outright with `--direct`. `WORDS` must be
+in the document exactly once, within one paragraph and outside a pending suggestion, as for
+`comment-doc --on`. `TEXT` is one paragraph in `read-doc`'s markup: `*italic*` for a book's or a
+magazine's title, `**bold**`, `[words](https://…)` for a link; a bare address stays plain text.
+`--remove` takes out words standing straight after `--after`'s in the same change, typically the
+author's bracketed note asking for the footnote, so the mark ends up where the note was:
+
+    $ insert-footnote DOC --after "a phrase" --remove " [source: an article]" --text "Jo Bloggs, *A Made-Up Book*, p. 3."
+    Document: A draft for tests
+    After: …has a phrase
+    Removed: " [source: an article]"
+    Text: Jo Bloggs, *A Made-Up Book*, p. 3.
+    Footnote 1 suggested; the mark and its text are in the document.
+
+It takes two changes: Google says which footnote it made only in its answer to the change that
+makes the mark, so the text goes in with a second one, made only if the document is as the first
+left it. If the second fails, the document holds an empty footnote mark, and the command says so,
+and where: reject it (or remove it), or type the text in by hand, before running it again, which
+would put in a second mark. It never retries and never undoes. Afterwards it reads the document
+again, as it would be with the suggestions accepted, and checks the mark stands straight after the
+words and its footnote holds the text with its look. Google numbers footnotes itself, so a footnote
+put in before others takes their numbers. `read-doc --footnotes` lists what a document already has.
+
+Refused before Google is asked (exit 2): no words for `--after`, `--text` or `--remove`, a line
+break in any of them, a mark left open, a character Google would drop. Refused, changing nothing
+(exit 5): `--after`'s words not there exactly once or touching a pending suggestion, or `--remove`'s
+words not straight after them.
+
+| Flag | Meaning |
+|---|---|
+| `--after WORDS` | Put the mark straight after these words. Needed. |
+| `--text TEXT` | The footnote's text. Needed. |
+| `--remove WORDS` | Take these words out of the body in the same change; they must stand straight after `--after`'s. |
+| `--direct` | Make the footnote outright, not as a suggestion. |
+| `--dry-run` | Check everything and say what would be done (`A footnote would be suggested`); change nothing. |
+| `--timeout SECONDS` | How long to wait for each answer from Google. Default 30. |
+
 ## Errors and exit codes
 
 | Code | Meaning |
@@ -623,11 +675,14 @@ set.
 | 1 | `check-typography`: something to fix. `check-doc-format`: something does not match the format (after the fix, with `--fix`). |
 | 2, for `edit-doc` and `check-doc-format` | Also: an edits or format file that cannot be read, is not JSON in UTF-8, or has faults; every fault is named. Nothing is contacted. |
 | 2, for `insert-paragraphs` | Also: a content file that cannot be read, is not UTF-8, or has faults (each named with its line), or holds the words of `--after` or `--before`; neither of those given, or words empty or with a line break. Nothing is contacted. |
+| 2, for `insert-footnote` | Also: `--after`, `--text` or `--remove` empty or with a line break; a mark in `--text` left open, or a character Google would drop. Nothing is contacted. |
 | 2 | Bad arguments or settings: for `google-sign-in`, an `--env-file` in a shared secrets set; a `DOC` that is not an id or an address, flags that do not go together, an address not in `COMMENT_RECIPIENTS`, an unreadable `--settings` file, an empty marker. For `watch-doc`, also a `--snapshot` file that is not its snapshot of this document, or no folder to make it in; the file is left as it was. |
 | 2, for the picture commands | Also: a picture file that is not a PNG, JPEG or GIF, is empty, over 50 MB or over 25 megapixels; no upload folder; `--list` with other flags. Nothing is contacted. |
 | 3 | Cannot sign in to Google: a secret is not set or empty, or Google refused the stored token (run `google-sign-in` again). |
 | 4 | Google could not be reached, or answered with an error; the message names the step and Google's own words. For the picture commands, also a picture Google could not fetch, a document changed by someone while the command ran (run it again), or a sharing that could not be taken back (`STILL SHARED`, see above). When Google stopped answering partway, the message says what may or may not have happened. |
 | 4, for `edit-doc`, `insert-paragraphs` and `check-doc-format` | Also the document changed while the command read it (nothing was changed; run it again), or Google went out of reach while the change was being made (the message says it may or may not have been made, and how to look). |
+| 4, for `insert-footnote` | Also the document changed while it read it (nothing was changed); or the mark was made but its text could not be put in, or Google did not say which footnote it made: the message says the document holds an empty footnote mark (or may, if Google went out of reach), after which words, and what to do. |
+| 5, for `insert-footnote` | Also `--after`'s words not in the document exactly once or touching a pending suggestion, or `--remove`'s words not straight after them (nothing was changed); or the footnote not in the document as asked afterwards. |
 | 5, for `edit-doc` | Also an edit that cannot be made (each is named, and nothing was changed), or an edit not in the document afterwards. |
 | 5, for `insert-paragraphs` | Also the words of `--after` or `--before` not in the document exactly once, in a table or in a pending suggestion (nothing was changed), or a new paragraph not in the document afterwards (each is marked). |
 | 5 | The document is not as it must be: no document with that id that this account can see, in the bin, not a Google Doc; or the words of `--on` or `--at` are not in it exactly once, or `--at`'s are not alone in their paragraph; no picture N; an upload folder this account cannot see; Google not saying an old picture's width (give `--width`). For `watch-doc`, also a snapshot that could not be written: the look was printed, the old snapshot stands, and the next look reports the same again. |
@@ -648,7 +703,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 994 tests, in about 12 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 1053 tests, in about 14 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -661,7 +716,9 @@ a document with a nested bullet list and a numbered list; `count-doc` and `check
 real document; `edit-doc --dry-run`, then `edit-doc` and `edit-doc --direct` on a scratch document,
 seeing the suggestions in Google Docs and accepting one; `insert-paragraphs --dry-run`, then as
 suggestions and with `--direct` on a scratch document, after a paragraph and after the last one,
-reading the result with `read-doc` and checking it with `check-doc-format`; `check-doc-format` with the example format
+reading the result with `read-doc` and checking it with `check-doc-format`; `insert-footnote --dry-run`, then as a
+suggestion with `--remove` and with `--direct` on a scratch document, reading the footnotes back with `read-doc
+--footnotes`; `check-doc-format` with the example format
 on a scratch document, then `--fix --dry-run`, `--fix`, and the check again; `watch-doc` twice on a document, editing
 it between the two; `insert-picture --dry-run`, then for real, on a scratch document, from a file
 and from an address, then `replace-picture --list` and `--picture 1` on it, checking each time that
@@ -677,7 +734,10 @@ before its suggested change until the suggestions are accepted. On 22 November 2
 --fix` set a heading's bold, then its font, then both back, on a scratch document: Google drops text's
 own bold when its font is set, which the fix now puts back in the same change. The same day
 `watch-doc --wait` ran read-only on a scratch document: a first look, two-minute waits with nothing
-new (exit 6, 3 looks), and a stop (exit 143, the snapshot whole, nothing beside it). As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
+new (exit 6, 3 looks), and a stop (exit 143, the snapshot whole, nothing beside it). On 27 November
+2026, before `insert-footnote` was written, one footnote was suggested by hand on a scratch document:
+Google takes a footnote as a suggestion, starts the footnote with a space, and puts the text given in
+a second change into the same suggestion. As of 1 November 2026, `read-doc` and `comment-doc --list` have been run on a
 real document, and `watch-doc` twice on a public sample document with nothing changed between (sign
 in, reading, comments, the snapshot). On 2 November 2026 the picture commands ran on scratch
 documents: `insert-picture` from a file, with a caption, a link and a width; `replace-picture --list`;
@@ -687,8 +747,11 @@ are still to come.
 
 ## Known limitations
 
-- `read-doc` writes the body only: not headers, footers or footnotes' text (a footnote's place is
-  marked), and not pictures (a paragraph that is only a picture is left out).
+- `read-doc` writes the body only: not headers or footers, nor footnotes' text unless asked with
+  `--footnotes` (a footnote's place is marked), and not pictures (a paragraph that is only a picture
+  is left out).
+- `insert-footnote` writes a footnote of one paragraph, and never changes a footnote already there;
+  `edit-doc` cannot change a footnote's text either.
 - A numbered list is written in figures whatever the document shows: an item shown as `b.` or
   `ii.` comes out as `2. `. A numbered heading has its number first (`1. ## Heading`).
 - `watch-doc` does not see a highlight, an underline, a font or a picture changing, a comment
@@ -754,6 +817,9 @@ are still to come.
   `google-docs-tools-secrets/env.sh`, which goes out of use. In a device shell, connect lobster-tools
   and `~/projects/secrets/google` in its place. The commands' help and their message for a missing
   secret say so.
+- 27 November 2026: new command, `insert-footnote`, which puts a footnote with the caller's text
+  after given words, and `read-doc --footnotes`, which lists a document's footnotes after its body.
+  `read-doc` without the flag is as before.
 
 ## Contributing
 

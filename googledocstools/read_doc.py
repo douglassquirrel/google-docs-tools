@@ -17,6 +17,7 @@ from googledocstools.cli import (
     the_document,
 )
 from googledocstools.document import paragraphs
+from googledocstools.footnotes import listed
 from googledocstools.text import as_text
 
 COMMAND = "read-doc"
@@ -27,7 +28,8 @@ def _parser():
         prog=COMMAND,
         description="Print a Google Doc as text: its title and headings with #, **bold**, "
         "*italic* and [links](address), list items with -  or their number and two more spaces "
-        "for each level, a blank line between paragraphs, a --- for a horizontal rule. Every "
+        "for each level, a blank line between paragraphs, a --- for a horizontal rule; with "
+        "--footnotes, each footnote's text after the body. Every "
         "call it makes to Google is a read; it changes nothing.",
         epilog="The Google secrets are read from the environment: run the command through "
         "lobster-tools' secrets with the set that holds them (secrets run google -- COMMAND …), "
@@ -44,6 +46,10 @@ def _parser():
         help="mark highlighted text as {==text==}")
     parser.add_argument(
         "--title", action="store_true", help="print the document's name first, as a line")
+    parser.add_argument(
+        "--footnotes", action="store_true",
+        help="after the body, list each footnote: its number, the words before its mark and "
+        "its text")
     parser.add_argument(
         "--timeout", metavar="SECONDS", type=seconds, default=30,
         help="how long to wait for each answer from Google (default: 30)")
@@ -67,6 +73,10 @@ def _run(args, env, send, out):
     if args.title:
         out.write("%s\n\n" % name)
     out.write(as_text(paragraphs(described), args.highlights))
+    if args.footnotes:
+        lines = listed(described)
+        out.write("\n<!-- footnotes -->\n%s\n" % "\n".join(lines) if lines
+                  else "\n<!-- footnotes: none -->\n")
     return OK
 
 

@@ -446,3 +446,18 @@ def put(fake, env, tmp_path, capsys):
     run.document([Para("A heading", {"namedStyleType": "HEADING_2"}),
                   "The first paragraph under it.", "The end."])
     return run
+
+
+@pytest.fixture
+def footnote(fake, env, capsys):
+    """Run insert-footnote against a document held piece by piece: two paragraphs, the second
+    with a bracketed note after a phrase."""
+    from googledocstools import insert_footnote
+
+    run = command_runner(insert_footnote, fake, env, capsys)
+    run.document = lambda paragraphs, footnotes=None: fake.add_document(
+        DOC_ID, DOC_NAME, ["root"], paragraphs, footnotes=footnotes)
+    run.document(["The first paragraph, with a quoted line.",
+                  [("The second has ", {}), ("a phrase", {"bold": True}),
+                   (" [source: an article] in it.", {})]])
+    return run

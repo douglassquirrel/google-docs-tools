@@ -6,7 +6,8 @@ import re
 import pytest
 
 COMMANDS = ["read_doc", "comment_doc", "watch_doc", "insert_picture", "replace_picture",
-            "count_doc", "check_typography", "edit_doc", "insert_paragraphs", "check_doc_format"]
+            "count_doc", "check_typography", "edit_doc", "insert_paragraphs", "check_doc_format",
+            "insert_footnote"]
 
 
 @pytest.mark.parametrize("module", COMMANDS)

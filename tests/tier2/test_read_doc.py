@@ -5,14 +5,15 @@ import sys
 
 import pytest
 
-from tests.conftest import RULE, Listed, Styled
+from tests.conftest import FOOTNOTE, RULE, Listed, Styled
 from tests.tier2.conftest import DOC_ID, DOC_NAME
 
 
 def test_help_names_the_document_and_the_flags_and_contacts_nothing(read, fake):
     result = read("--help", defaults=False)
     assert result.code == 0
-    for word in ("DOC", "--highlights", "--title", "--timeout", "changes nothing", "list items"):
+    for word in ("DOC", "--highlights", "--title", "--footnotes", "--timeout", "changes nothing",
+                 "list items"):
         assert word in result.out
     assert fake.calls == []
 
@@ -143,3 +144,35 @@ def test_lists_are_marked_nested_and_numbered_and_a_paragraph_after_is_not(read,
         "1. First\n\n2. **Second**\n\n"
         "A paragraph after.\n")
     assert fake.writes() == []
+
+
+def test_footnotes_lists_each_footnote_after_the_body_and_changes_nothing(read, fake):
+    read.document([
+        [("A quoted line", {}), (FOOTNOTE, {"footnote": "n-1"}), (" ends here.", {})],
+        [("Another “quote”", {}), (FOOTNOTE, {"footnote": "n-2"}), (".", {})],
+    ])
+    fake.files[DOC_ID]["footnotes"] = {
+        "n-1": [[(" Jo Bloggs, ", {}), ("A Made-Up Book", {"italic": True}), (", p. 3.", {})]],
+        "n-2": [" https://example.org/an-article"]}
+    result = read("--footnotes")
+    assert (result.code, result.err) == (0, "")
+    assert result.out == (
+        "A quoted line ends here.\n\n<!-- not written: a footnote reference -->\n\n"
+        "Another “quote”.\n\n<!-- not written: a footnote reference -->\n\n"
+        "<!-- footnotes -->\n"
+        "1 | A quoted line | Jo Bloggs, *A Made-Up Book*, p. 3.\n"
+        "2 | Another “quote” | https://example.org/an-article\n")
+    assert fake.writes() == []
+
+
+def test_footnotes_says_so_when_there_are_none(read):
+    result = read("--footnotes")
+    assert result.code == 0
+    assert result.out.endswith("Stay warm! -squirrel\n\n<!-- footnotes: none -->\n")
+
+
+def test_without_footnotes_the_footnotes_text_is_not_printed(read, fake):
+    read.document([[("A line", {}), (FOOTNOTE, {"footnote": "n-1"})]])
+    fake.files[DOC_ID]["footnotes"] = {"n-1": [" A note."]}
+    result = read()
+    assert result.out == "A line\n\n<!-- not written: a footnote reference -->\n"

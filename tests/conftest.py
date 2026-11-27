@@ -116,8 +116,13 @@ class FakeGoogle:
             "text": text, "trashed": trashed, "permissions": [],
         }
 
-    def add_document(self, file_id, name, parents, paragraphs, revision="revision-1"):
-        """A Google Doc held piece by piece: paragraphs of (text, style) runs, or plain strings."""
+    def add_document(self, file_id, name, parents, paragraphs, revision="revision-1",
+                     footnotes=None):
+        """A Google Doc held piece by piece: paragraphs of (text, style) runs, or plain strings.
+
+        A footnote's mark is the run (FOOTNOTE, {"footnote": its id}); footnotes gives each id's
+        text, a string or (text, style) runs, held after the space Google starts every footnote
+        with (seen 27 November 2026)."""
         characters = []
         for runs in paragraphs:
             held = {}  # what the paragraph's end holds: its paragraph style and bullet, if given
@@ -134,6 +139,12 @@ class FakeGoogle:
         self.add(file_id, name, DOC, parents)
         self.files[file_id]["characters"] = characters
         self.files[file_id]["revision"] = revision
+        notes = {}
+        for note_id, runs in (footnotes or {}).items():
+            runs = [(runs, {})] if isinstance(runs, str) else runs
+            notes[note_id] = [[" ", {}]] + [[character, dict(style)] for text, style in runs
+                                            for character in text] + [["\n", {}]]
+        self.files[file_id]["footnotes"] = notes
 
     def add_described(self, file_id, name, parents, paragraphs):
         """A Google Doc that is only ever read: given as paragraphs for described()."""
@@ -177,16 +188,11 @@ class FakeGoogle:
     def paragraphs(self, file_id, mode="SUGGESTIONS_INLINE"):
         """The document read back: paragraphs of (text, style) runs, like-styled text merged,
         pending suggestions shown as the view mode asks."""
-        paragraphs, runs = [], []
-        for character, style in _viewed_runs(self.files[file_id]["characters"], mode):
-            if character == "\n":
-                paragraphs.append(runs)
-                runs = []
-            elif runs and runs[-1][1] == style:
-                runs[-1] = (runs[-1][0] + character, style)
-            else:
-                runs.append((character, dict(style)))
-        return paragraphs
+        return _as_paragraphs(self.files[file_id]["characters"], mode)
+
+    def footnote(self, file_id, note_id, mode="SUGGESTIONS_INLINE"):
+        """A footnote's text read back as paragraphs() reads the body, its leading space kept."""
+        return _as_paragraphs(self.files[file_id]["footnotes"][note_id], mode)
 
     def structured(self, file_id, mode="SUGGESTIONS_INLINE"):
         """The document read back for described(): each paragraph as paragraphs() gives it, as a
@@ -391,7 +397,9 @@ class FakeGoogle:
             return 400, {"error": {"code": 400, "message": "Invalid value at "
                                    "'suggestions_view_mode' (%s)" % mode}}
         if "described" in entry:
-            answer = described([_viewed(spec, mode) for spec in entry["described"]])
+            answer = described([_viewed(spec, mode) for spec in entry["described"]],
+                               footnotes={note_id: [_viewed(spec, mode) for spec in specs]
+                                          for note_id, specs in entry.get("footnotes", {}).items()})
             answer["documentId"] = doc_id
             answer["title"] = entry["name"]
             for key in ("documentStyle", "namedStyles"):
@@ -400,7 +408,9 @@ class FakeGoogle:
             return 200, answer
         if "characters" not in entry:
             raise AssertionError("this stand-in document was not added piece by piece")
-        answer = described(self.structured(doc_id, mode), entry["revision"])
+        answer = described(self.structured(doc_id, mode), entry["revision"], footnotes={
+            note_id: _as_paragraphs(held, mode)
+            for note_id, held in entry.get("footnotes", {}).items()})
         answer["documentId"] = doc_id
         answer["title"] = entry["name"]
         for key in ("documentStyle", "namedStyles"):
@@ -446,6 +456,8 @@ class FakeGoogle:
             return refuse("The required revision ID '%s' does not match the latest revision."
                           % required)
         characters = [[character, dict(style)] for character, style in entry["characters"]]
+        notes = copy.deepcopy(entry.get("footnotes", {}))
+        replies = [{} for _ in body["requests"]]
         mode = body.get("writeControl", {}).get("writeMode", "EDIT")
         if mode not in ("EDIT", "SUGGEST"):
             return refuse("Invalid value at 'write_control.write_mode' (%s)" % mode)
@@ -464,6 +476,24 @@ class FakeGoogle:
         removed = {}  # where text was deleted in this change -> the look of its first character
         for number, request in enumerate(body["requests"]):
             (kind, wanted), = request.items()
+            segment = (wanted.get("location") or wanted.get("range") or {}).get("segmentId")
+            if segment:
+                refused = _in_footnote(notes, segment, kind, wanted, mode, suggestion, number)
+                if refused:
+                    return refuse(refused)
+                continue
+            if kind == "createFootnote":
+                position = place(wanted["location"]["index"])
+                if position is None or position >= len(characters):
+                    return refuse("Invalid requests[%d].createFootnote: bad index" % number)
+                note_id = "kix.footnote-%d-%d" % (len(self.calls), number)
+                # As seen at Google on 27 November 2026: the new footnote holds a space and its
+                # line break; suggested, one suggestion holds the mark and all the footnote.
+                marked = {INSERTED: [suggestion]} if mode == "SUGGEST" else {}
+                characters.insert(position, [FOOTNOTE, dict(marked, footnote=note_id)])
+                notes[note_id] = [[" ", dict(marked)], ["\n", dict(marked)]]
+                replies[number] = {"createFootnote": {"footnoteId": note_id}}
+                continue
             if kind == "deleteContentRange":
                 first = place(wanted["range"]["startIndex"])
                 last = place(wanted["range"]["endIndex"])
@@ -472,7 +502,7 @@ class FakeGoogle:
                 if any(character == "\n" for character, _ in characters[first:last]):
                     raise AssertionError("the tools never delete a paragraph's end")
                 removed[first] = {key: value for key, value in characters[first][1].items()
-                                  if key not in (INSERTED, DELETED)}
+                                  if key not in (INSERTED, DELETED, "footnote")}
                 if mode == "SUGGEST":
                     # As seen at Google on 16 November 2026: text suggested for deletion stays,
                     # marked, and a suggested insertion at its start stands just before it.
@@ -493,6 +523,7 @@ class FakeGoogle:
                 source = characters[position] if before is None or before[0] == "\n" else before
                 look = dict(removed.get(position, source[1]))
                 look.pop("picture", None)  # text after a picture is not itself a picture
+                look.pop("footnote", None)  # nor text after a footnote's mark a mark
                 look.pop("paragraph", None)
                 # As Google's page says: a line break put in makes a new paragraph with the
                 # paragraph style of the place it is put, "including lists and bullets".
@@ -616,10 +647,11 @@ class FakeGoogle:
             else:
                 raise AssertionError("the stand-in does not know the request %r" % kind)
         entry["characters"] = characters
+        entry["footnotes"] = notes
         if page or "documentStyle" in entry:
             entry["documentStyle"] = page
         entry["revision"] = "revision-%d" % (int(entry["revision"].rsplit("-", 1)[1]) + 1)
-        return 200, {"documentId": doc_id, "replies": [{} for _ in body["requests"]],
+        return 200, {"documentId": doc_id, "replies": replies,
                      "writeControl": {"requiredRevisionId": entry["revision"]}}
 
     def _upload(self, call):
@@ -740,6 +772,63 @@ def _viewed_runs(runs, mode):
     return shown
 
 
+def _as_paragraphs(characters, mode):
+    """Held characters read back: paragraphs of (text, style) runs, like-styled text merged,
+    pending suggestions shown as the view mode asks."""
+    paragraphs, runs = [], []
+    for character, style in _viewed_runs(characters, mode):
+        if character == "\n":
+            paragraphs.append(runs)
+            runs = []
+        elif runs and runs[-1][1] == style:
+            runs[-1] = (runs[-1][0] + character, style)
+        else:
+            runs.append((character, dict(style)))
+    return paragraphs
+
+
+def _in_footnote(notes, segment, kind, wanted, mode, suggestion, number):
+    """Apply a request inside a footnote, whose positions count from 0; why it is refused, if it
+    is. Only what the tools send there: text put in, and its look set."""
+    if segment not in notes:
+        return "Invalid requests[%d].%s: Segment ID not found: %s" % (number, kind, segment)
+    held = notes[segment]
+
+    def place(index):
+        at = 0
+        for position, (character, _) in enumerate(held):
+            if at == index:
+                return position
+            at += _units(character)
+        return len(held) if at == index else None
+
+    if kind == "insertText":
+        position = place(wanted["location"]["index"])
+        if position is None or position >= len(held):
+            return "Invalid requests[%d].insertText: bad index" % number
+        beside = held[position - 1 if position else 0][1]
+        look = {key: value for key, value in beside.items() if key not in (INSERTED, DELETED)}
+        if mode == "SUGGEST":
+            # As seen at Google on 27 November 2026: text suggested into a footnote that is
+            # itself a pending suggestion joins that suggestion.
+            look[INSERTED] = list(beside.get(INSERTED) or [suggestion])
+        held[position:position] = [[character, dict(look)] for character in wanted["text"]]
+        return None
+    if kind == "updateTextStyle":
+        first = place(wanted["range"]["startIndex"])
+        last = place(wanted["range"]["endIndex"])
+        if first is None or last is None or first >= last:
+            return "Invalid requests[%d].updateTextStyle: bad range" % number
+        for _, style in held[first:last]:
+            for field in wanted["fields"].split(","):
+                if field in wanted["textStyle"]:
+                    style[field] = copy.deepcopy(wanted["textStyle"][field])
+                else:
+                    style.pop(field, None)
+        return None
+    raise AssertionError("the stand-in does not know the request %r in a footnote" % kind)
+
+
 def _viewed(spec, mode):
     """A paragraph given for described(), as a view mode shows it."""
     if isinstance(spec, str) or spec is RULE:
@@ -802,16 +891,21 @@ class RuleThen:
 
 
 PICTURE = "\ufffc"  # how the stand-in holds a picture: one character with the picture as its look
+FOOTNOTE = "\ufff9"  # how it holds a footnote's mark: one character, {"footnote": its id} its look
 
 
-def described(paragraphs, revision="revision-1"):
+def described(paragraphs, revision="revision-1", footnotes=None):
     """A document as the Docs API describes it, built from paragraphs of (text, style) runs.
 
     A paragraph may be given as one plain string. As at Google, the body starts with a section
     break that takes index 0, the text starts at 1, and each paragraph ends with a newline.
+    A footnote's mark is the run (FOOTNOTE, {"footnote": its id}), numbered in order as Google
+    numbers them; footnotes gives each footnote's paragraphs, Google's leading space and all, and
+    only the footnotes whose marks are in the body are described (seen 27 November 2026).
     """
     index = 1
     content = [{"endIndex": 1, "sectionBreak": {"sectionStyle": {}}}]
+    marks = []  # the ids of the footnotes whose marks are in the body, in order
     objects = {}  # the pictures that say where they came from, as Google keeps them
     lists = {}  # the lists, as Google keeps them
     for runs in paragraphs:
@@ -887,6 +981,17 @@ def described(paragraphs, revision="revision-1"):
                 text = text[1:]
                 if not text:
                     continue
+            if text.startswith(FOOTNOTE):
+                marks.append(style["footnote"])
+                reference = {"footnoteId": style["footnote"], "footnoteNumber": str(len(marks)),
+                             "textStyle": {}}
+                reference.update({k: list(v) for k, v in style.items() if k in (INSERTED, DELETED)})
+                elements.append({"startIndex": index, "endIndex": index + 1,
+                                 "footnoteReference": reference})
+                index += 1
+                text = text[1:]
+                if not text:
+                    continue
             end = index + _units(text)
             run = {"content": text,
                    "textStyle": {k: v for k, v in style.items() if k not in (INSERTED, DELETED)}}
@@ -906,6 +1011,18 @@ def described(paragraphs, revision="revision-1"):
         answer["inlineObjects"] = objects
     if lists:
         answer["lists"] = lists
+    if marks:
+        answer["footnotes"] = {}
+        for note_id in marks:
+            # Positions in a footnote count from 0, with no section break before its text.
+            inside = described((footnotes or {}).get(note_id, [" "]))["body"]["content"][1:]
+            for structural in inside:
+                for item in [structural] + structural["paragraph"]["elements"]:
+                    item["startIndex"] -= 1
+                    item["endIndex"] -= 1
+                    if not item["startIndex"]:
+                        del item["startIndex"]  # as at Google, which leaves a 0 out
+            answer["footnotes"][note_id] = {"footnoteId": note_id, "content": inside}
     return answer
 
 
