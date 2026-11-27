@@ -461,3 +461,58 @@ def test_the_report_counts_a_footnotes_paragraph_apart_from_the_body_paragraph_a
 def test_an_empty_footnote_is_not_checked():
     found = noted([[("Text", {}), mark("n-1")]], {"n-1": [[(" ", ARIAL_10)]]})
     assert check(found, NOTES).problems == []
+
+
+# beyond-ai's Request 10: a typed tab at a paragraph's start, and the left indent.
+def test_the_left_indent_is_a_key_of_body_list_and_footnote_text():
+    assert parse_format(json.dumps({"body": {"left_indent_inches": 0},
+                                    "list": {"left_indent_inches": 0.5},
+                                    "footnote": {"left_indent_inches": 0}}))
+    with pytest.raises(FormatError) as refused:
+        parse_format(json.dumps({"body": {"left_indent_inches": -1},
+                                 "heading_2": {"left_indent_inches": 0}}))
+    assert refused.value.problems == [
+        'body: "left_indent_inches" must be a number of inches, 0 or more',
+        'heading_2: unknown key "left_indent_inches"']
+
+
+def test_a_left_indent_not_as_the_format_says_is_reported_and_set():
+    found = document([Para("An indented block of body text.", {"indentStart": dim(36)}),
+                      "Body text with no left indent."])
+    checked = check(found, {"body": {"left_indent_inches": 0}})
+    assert [(problem.group, problem.beginning) for problem in checked.problems] == [
+        ("body text: left indent not 0 in", "An indented block of body text.")]
+    assert checked.fixes[0].requests == [{"updateParagraphStyle": {
+        "range": {"startIndex": 1, "endIndex": 33},
+        "paragraphStyle": {"indentStart": {"magnitude": 0, "unit": "PT"}},
+        "fields": "indentStart"}}]
+
+
+def test_a_paragraph_starting_with_a_tab_is_reported_and_its_first_line_indent_never_set():
+    found = document([Para("\tTyped with a tab, and no indent.", {"indentFirstLine": dim(0)}),
+                      " \tA space, then a tab, indented right.",
+                      Para("Set right, with an indent.", {"indentFirstLine": dim(0)})])
+    checked = check(found, {"body": {"first_line_indent_inches": 0.5}})
+    assert [(problem.group, problem.beginning) for problem in checked.problems] == [
+        ("body text: first-line indent not 0.5 in", "Typed with a tab, and no indent."),
+        ("body text: starts with a tab: take it out, the first-line indent does that",
+         "Typed with a tab, and no indent."),
+        ("body text: starts with a tab: take it out, the first-line indent does that",
+         "A space, then a tab, indented right."),
+        ("body text: first-line indent not 0.5 in", "Set right, with an indent."),
+    ]
+    assert [fix.beginning for fix in checked.fixes] == ["Set right, with an indent."]
+
+
+def test_a_tab_is_reported_in_a_list_item_and_a_footnote_but_not_inside_a_line():
+    found = noted([Para("\tA tabbed item.", LISTED, {"listId": "list-1"}),
+                   [("A tab\tinside is fine", {}), mark("n-1")]],
+                  {"n-1": [[(" \tA tabbed note.", TIMES_10)]]})
+    checked = check(found, {"list": {"font": "Times New Roman"}, "footnote": {"size": 10},
+                            "body": {"size": 12}})
+    assert [(problem.group, problem.place) for problem in checked.problems] == [
+        ("list items: starts with a tab: take it out, the first-line indent does that",
+         "at the start"),
+        ("footnote: starts with a tab: take it out, the first-line indent does that",
+         "footnote 1"),
+    ]

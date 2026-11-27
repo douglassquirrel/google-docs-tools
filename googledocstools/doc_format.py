@@ -23,7 +23,7 @@ Fix = namedtuple("Fix", "place beginning said requests")
 Checked = namedtuple("Checked", "problems fixes left_out start_at", defaults=(None, None))
 
 HEADINGS = ("title",) + tuple("heading_%d" % level for level in range(1, 7))
-TEXT_KEYS = ("font", "size", "line_spacing", "first_line_indent_inches")
+TEXT_KEYS = ("font", "size", "line_spacing", "first_line_indent_inches", "left_indent_inches")
 HEADING_KEYS = ("font", "size", "bold", "colour", "alignment", "page_break_before",
                 "keep_with_next", "pattern")
 PARTS = dict({"page": ("size", "margins_inches"), "body": TEXT_KEYS, "list": TEXT_KEYS,
@@ -36,6 +36,9 @@ SHOWN_PART = dict({"body": "body text", "list": "list items", "title": "title",
                    "footnote": "footnote"},
                   **{"heading_%d" % level: "heading %d" % level for level in range(1, 7)})
 LOOKS_LIKE_A_HEADING_WORDS = 15
+# A tab typed at a paragraph's start carries its first line on past the first-line indent, to the
+# next tab stop (three paragraphs of a book, 27 November 2026), so the fix leaves such an indent.
+TABBED = "starts with a tab: take it out, the first-line indent does that"
 
 
 class FormatError(Exception):
@@ -67,9 +70,9 @@ def _fault(part, key, value):
             '"font" must be the name of a font')
     if key in ("size", "line_spacing"):
         return None if _number(value, above=0) else '"%s" must be a number above 0' % key
-    if key == "first_line_indent_inches":
+    if key in ("first_line_indent_inches", "left_indent_inches"):
         return None if _number(value, least=0) else (
-            '"first_line_indent_inches" must be a number of inches, 0 or more')
+            '"%s" must be a number of inches, 0 or more' % key)
     if key in ("bold", "page_break_before", "keep_with_next"):
         return None if isinstance(value, bool) else '"%s" must be true or false' % key
     if key == "colour":
@@ -173,6 +176,12 @@ PARAGRAPH_SETTINGS = (
      lambda v: {"magnitude": v * 72, "unit": "PT"},
      lambda v: "first-line indent %s in" % _figure(v),
      lambda have, want: abs(have - want * 72) < 0.5),
+    # Measured from the margin, as the first-line indent is (seen 27 November 2026).
+    ("left_indent_inches", "indentStart",
+     lambda style: style.get("indentStart", {}).get("magnitude"), 0,
+     lambda v: {"magnitude": v * 72, "unit": "PT"},
+     lambda v: "left indent %s in" % _figure(v),
+     lambda have, want: abs(have - want * 72) < 0.5),
     ("alignment", "alignment", lambda style: style.get("alignment"), "START",
      lambda v: ALIGNMENTS[v], lambda v: "alignment %s" % v,
      lambda have, want: have == ALIGNMENTS[want]),
@@ -184,7 +193,7 @@ PARAGRAPH_SETTINGS = (
 )
 
 
-SETTING_NAMES = ("first-line indent", "line spacing", "page break before", "keep with next",
+SETTING_NAMES = ("first-line indent", "left indent", "line spacing", "page break before", "keep with next",
                  "font", "size", "bold", "colour", "alignment")
 
 
@@ -286,13 +295,17 @@ def _paragraph(styles, structural, part, wanted, place, first_words, body_size, 
             problem(_not(saying(wanted[key])))
             said.append(saying(wanted[key]))
             text_style[field] = sent(wanted[key])
+    tabbed = part in ("body", "list", "footnote") and text.lstrip(" ").startswith("\t")
     for key, field, read, default, sent, saying, matches in PARAGRAPH_SETTINGS:
         if key in wanted and not matches(styles.value(
                 kind, "paragraphStyle", paragraph.get("paragraphStyle", {}), read, default),
                 wanted[key]):
             problem(_not(saying(wanted[key])))
-            said.append(saying(wanted[key]))
-            paragraph_style[field] = sent(wanted[key])
+            if not (tabbed and field == "indentFirstLine"):
+                said.append(saying(wanted[key]))
+                paragraph_style[field] = sent(wanted[key])
+    if tabbed:
+        problem(TABBED)
     if "pattern" in wanted and not re.search(wanted["pattern"], text):
         problem("does not match %s" % wanted["pattern"])
     if part == "body" and text.strip() and len(text.split()) <= LOOKS_LIKE_A_HEADING_WORDS:

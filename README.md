@@ -527,9 +527,11 @@ paragraph stands there, in order, with its kind, its words and their look.
 
 Checks the document against a house format and reports, grouped by what is wrong, each paragraph
 that does not match, with where it is and its first words (three of each kind unless `-v`); a
-heading at a level the format does not name; a heading that does not match its pattern; and normal
+heading at a level the format does not name; a heading that does not match its pattern; normal
 text that looks like a heading (all bold, or 2 points or more above the body's size, in 15 words or
-fewer). What a paragraph has is what it sets itself, else what its named style sets in the
+fewer); and a body, list or footnote paragraph that starts with a tab (`starts with a tab: take it
+out, the first-line indent does that`), whose first-line indent `--fix` then leaves alone, since
+the tab would carry the line on past it. What a paragraph has is what it sets itself, else what its named style sets in the
 document, else Google's default (Arial 11, single spacing). A paragraph with no text, or only spaces,
 is never checked or fixed. With `"start_at": "heading_2"` in the format file, everything before the
 first heading 2 (a book's title page and contents, laid out by hand) is left alone too, and the
@@ -565,8 +567,8 @@ The format file, every part optional (`check-doc-format.example.json` in this fo
 |---|---|
 | `start_at` | `title` or `heading_1` to `heading_6`: check and fix nothing before the first paragraph of that kind. Not a part, a setting of the whole file. |
 | `page` | `size`: `letter`, `a4` or `[width, height]` in inches; `margins_inches`: one number for all four. |
-| `body` (normal text), `list` (list items) | `font`, `size` (points), `line_spacing` (a multiple of single: 2 is double), `first_line_indent_inches`. |
-| `footnote` | The same four, for every paragraph of every footnote, reported as `footnote N` with its first words. Without the part, footnotes are not checked. |
+| `body` (normal text), `list` (list items) | `font`, `size` (points), `line_spacing` (a multiple of single: 2 is double), `first_line_indent_inches`, `left_indent_inches` (the whole paragraph's indent; both measured from the margin). |
+| `footnote` | The same five, for every paragraph of every footnote, reported as `footnote N` with its first words. Without the part, footnotes are not checked. |
 | `title`, `heading_1` to `heading_6` | `font`, `size`, `bold`, `colour` (`#rrggbb`), `alignment` (`left`, `centre`, `right`, `justified`), `page_break_before`, `keep_with_next`, `pattern` (a regular expression the heading's text must match). |
 
     $ check-doc-format DOC --format book.json
@@ -708,7 +710,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 1063 tests, in about 14 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 1068 tests, in about 14 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -836,6 +838,10 @@ are still to come.
 - 27 November 2026: `check-doc-format` takes a `footnote` part in the format file (`font`, `size`,
   `line_spacing`, `first_line_indent_inches`) and checks and fixes every footnote by it; the example
   format now has one. A format file without the part works as before.
+- 27 November 2026: `check-doc-format` reports a body, list or footnote paragraph that starts with
+  a tab, and `--fix` no longer sets such a paragraph's first-line indent, which with the tab made it
+  wider than the rest; take the tab out by hand. A new key, `left_indent_inches`, for `body`, `list`
+  and `footnote`. Formats without it work as before, but a check may now report tabs it did not.
 - 27 November 2026: new command, `insert-footnote`, which puts a footnote with the caller's text
   after given words, and `read-doc --footnotes`, which lists a document's footnotes after its body.
   `read-doc` without the flag is as before.

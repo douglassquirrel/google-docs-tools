@@ -338,3 +338,36 @@ def test_fix_sets_each_footnote_keeping_italic_and_bold_and_checks_again(doc_for
                                              ("in bold", dict(times, bold=True)), (".", times)]]
     assert fake.paragraphs(DOC_ID) == body
     assert doc_format().out == "Format: everything matches.\n"
+
+
+def test_fix_sets_a_left_indent_but_leaves_a_tabbed_paragraphs_first_line_and_its_tab(
+        doc_format, fake):
+    # beyond-ai's Request 10: three paragraphs typed with a tab went to about 1 in after --fix.
+    doc_format.file.write_text(json.dumps({"body": {"first_line_indent_inches": 0.5,
+                                                    "left_indent_inches": 0}}), encoding="utf-8")
+    doc_format.document([
+        Para("\tTyped new, with a tab.", {"indentFirstLine": dim(0)}),
+        Para("A block indented by hand.", {"indentStart": dim(36)}),
+    ])
+    result = doc_format("--fix")
+    assert result.code == 1
+    assert result.out == (
+        "body text: first-line indent not 0.5 in: 1 paragraph\n"
+        "  at the start: Typed new, with a tab.\n"
+        "body text: starts with a tab: take it out, the first-line indent does that: 1 paragraph\n"
+        "  at the start: Typed new, with a tab.\n"
+        "body text: left indent not 0 in: 1 paragraph\n"
+        '  after "Typed new, with a tab.": A block indented by hand.\n'
+        "Format: 3 problems in 2 paragraphs.\n"
+        "Set:\n"
+        '  after "Typed new, with a tab.": A block indented by hand.: left indent 0 in\n'
+        "After the fix:\n"
+        "body text: first-line indent not 0.5 in: 1 paragraph\n"
+        "  at the start: Typed new, with a tab.\n"
+        "body text: starts with a tab: take it out, the first-line indent does that: 1 paragraph\n"
+        "  at the start: Typed new, with a tab.\n"
+        "Format: 2 problems in 1 paragraph.\n")
+    assert [style.get("paragraph") for character, style in fake.files[DOC_ID]["characters"]
+            if character == "\n"] == [{"indentFirstLine": dim(0)},
+                                      {"indentStart": {"magnitude": 0, "unit": "PT"}}]
+    assert fake.paragraphs(DOC_ID)[0] == [("\tTyped new, with a tab.", {})]
