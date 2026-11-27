@@ -4,7 +4,10 @@ check-doc-format. Pure: the document is as the Docs API describes it.
 What a paragraph has is what it sets itself, else what its named style sets in the document, else
 what normal text's named style sets, else Google's default; the same for each piece of its text.
 A fix sets formatting only: never a character of text, never a heading's level, and never bold or
-italic in body text or list items, which are the author's emphasis.
+italic in body text, list items or footnotes, which are the author's emphasis.
+
+A footnote's paragraphs are in a segment of their own, whose positions count from 0; they are
+Normal text, with the size Google sets on the footnote's own text (seen 27 November 2026).
 """
 import json
 import re
@@ -23,12 +26,14 @@ HEADINGS = ("title",) + tuple("heading_%d" % level for level in range(1, 7))
 TEXT_KEYS = ("font", "size", "line_spacing", "first_line_indent_inches")
 HEADING_KEYS = ("font", "size", "bold", "colour", "alignment", "page_break_before",
                 "keep_with_next", "pattern")
-PARTS = dict({"page": ("size", "margins_inches"), "body": TEXT_KEYS, "list": TEXT_KEYS},
+PARTS = dict({"page": ("size", "margins_inches"), "body": TEXT_KEYS, "list": TEXT_KEYS,
+              "footnote": TEXT_KEYS},
              **{name: HEADING_KEYS for name in HEADINGS})
 ALIGNMENTS = {"left": "START", "centre": "CENTER", "right": "END", "justified": "JUSTIFIED"}
 PAGES = {"letter": (612.0, 792.0), "a4": (595.276, 841.89)}  # points
 MARGINS = ("marginTop", "marginBottom", "marginLeft", "marginRight")
-SHOWN_PART = dict({"body": "body text", "list": "list items", "title": "title"},
+SHOWN_PART = dict({"body": "body text", "list": "list items", "title": "title",
+                   "footnote": "footnote"},
                   **{"heading_%d" % level: "heading %d" % level for level in range(1, 7)})
 LOOKS_LIKE_A_HEADING_WORDS = 15
 
@@ -250,8 +255,9 @@ def _page(described, wanted):
     return problems, fixes
 
 
-def _paragraph(styles, structural, part, wanted, place, first_words, body_size):
-    """One paragraph's problems, and the fix for those that can be fixed."""
+def _paragraph(styles, structural, part, wanted, place, first_words, body_size, segment=None):
+    """One paragraph's problems, and the fix for those that can be fixed. In a footnote, segment
+    is its id, and the paragraph is known in a problem by (the id, its start)."""
     paragraph = structural["paragraph"]
     kind = paragraph.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
     shown_part = SHOWN_PART[part]
@@ -260,9 +266,17 @@ def _paragraph(styles, structural, part, wanted, place, first_words, body_size):
     text = "".join(run["content"] for run in runs).rstrip("\n")
     problems, said, text_style, paragraph_style = [], [], {}, {}
 
+    start, end = structural.get("startIndex", 0), structural["endIndex"]  # Google leaves out a 0
+
     def problem(what):
         problems.append(Problem("%s: %s" % (shown_part, what), place, first_words,
-                                structural["startIndex"]))
+                                start if segment is None else (segment, start)))
+
+    def between(first, last):
+        found = {"startIndex": first, "endIndex": last}
+        if segment is not None:
+            found["segmentId"] = segment
+        return found
 
     for key, field, read, default, sent, saying, matches in TEXT_SETTINGS:
         if key not in wanted:
@@ -290,7 +304,6 @@ def _paragraph(styles, structural, part, wanted, place, first_words, body_size):
         if bold or large:
             problem("looks like a heading")
     requests = []
-    start, end = structural["startIndex"], structural["endIndex"]
     # Google drops a piece's own bold when its font is set (seen 22 November 2026): bold to be set
     # goes in after the font, and otherwise each piece that was bold of its own is made bold
     # again, in the same change.
@@ -300,19 +313,19 @@ def _paragraph(styles, structural, part, wanted, place, first_words, body_size):
     for style in (text_style, after_font):
         if style:
             requests.append({"updateTextStyle": {
-                "range": {"startIndex": start, "endIndex": end - 1}, "textStyle": style,
+                "range": between(start, end - 1), "textStyle": style,
                 "fields": ",".join(style)}})
     if "weightedFontFamily" in text_style and not after_font:
         for element in paragraph["elements"]:
             if element.get("textRun", {}).get("textStyle", {}).get("bold") and (
                     element["startIndex"] < end - 1):
                 requests.append({"updateTextStyle": {
-                    "range": {"startIndex": element["startIndex"],
-                              "endIndex": min(element["endIndex"], end - 1)},
+                    "range": between(element.get("startIndex", 0),
+                                     min(element["endIndex"], end - 1)),
                     "textStyle": {"bold": True}, "fields": "bold"}})
     if paragraph_style:
         requests.append({"updateParagraphStyle": {
-            "range": {"startIndex": start, "endIndex": end}, "paragraphStyle": paragraph_style,
+            "range": between(start, end), "paragraphStyle": paragraph_style,
             "fields": ",".join(paragraph_style)}})
     return problems, [Fix(place, first_words, said, requests)] if requests else []
 
@@ -330,10 +343,14 @@ def check(described, fmt):
     first = next((number for number, structural in enumerate(all_paragraphs)
                   if _part(structural["paragraph"]) == start_at and _text(structural).strip()),
                  None) if start_at else None
+    marks = []  # the footnotes whose marks are in paragraphs that are checked, in order
     for number, structural in enumerate(all_paragraphs):
         paragraph = structural["paragraph"]
         text = _text(structural)
         part = _part(paragraph)
+        if first is None or number >= first:
+            marks += [element["footnoteReference"] for element in paragraph["elements"]
+                      if "footnoteReference" in element]
         place = ('under "%s"' % heading if heading else
                  'after "%s"' % beginning(before) if before else "at the start")
         if (first is not None and number < first) or not text.strip():
@@ -351,6 +368,17 @@ def check(described, fmt):
                 level = 1 if part == "title" else int(part[len("heading_"):])
                 heading = "#" * level + " " + beginning(text)
             before = text
+    for reference in marks if "footnote" in fmt else []:
+        note_id = reference.get("footnoteId")
+        place = "footnote %s" % reference.get("footnoteNumber", "")
+        note = described.get("footnotes", {}).get(note_id, {})
+        for structural in _paragraphs_in(note.get("content", [])):
+            text = _text(structural)
+            if text.strip():
+                found, fixed = _paragraph(styles, structural, "footnote", fmt["footnote"], place,
+                                          beginning(text), body_size, note_id)
+                problems += found
+                fixes += fixed
     return Checked(problems, fixes, first, start_at)
 
 

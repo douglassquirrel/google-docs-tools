@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from tests.conftest import Para
+from tests.conftest import FOOTNOTE, Para
 from tests.tier1.test_doc_format import H2, H3, LISTED, PAGE, dim
 from tests.tier2.conftest import DOC_ID
 
@@ -268,3 +268,73 @@ def test_one_fix_that_sets_the_font_keeps_each_pieces_own_bold(doc_format, fake)
          (" words in a sentence long enough.", times)]]
     again = doc_format()
     assert again.out.splitlines()[-1] == "Format: 1 problem in 1 paragraph."
+
+
+# beyond-ai's Request 09: footnotes in the body's font, smaller.
+TIMES_10 = {"weightedFontFamily": {"fontFamily": "Times New Roman"}, "fontSize": dim(10)}
+ARIAL_10 = {"weightedFontFamily": {"fontFamily": "Arial"}, "fontSize": dim(10)}
+FOOTNOTE_REPORT = (
+    "footnote: font not Times New Roman: 2 paragraphs\n"
+    "  footnote 1: Jo Bloggs, A Made-Up Book, p. 3.\n"
+    "  footnote 2: A note made by hand, in bold.\n"
+    "footnote: size not 10 pt: 1 paragraph\n"
+    "  footnote 2: A note made by hand, in bold.\n"
+    "Format: 3 problems in 2 paragraphs.\n")
+
+
+def with_footnotes(doc_format, fake):
+    doc_format.file.write_text(json.dumps({
+        "body": {"font": "Times New Roman", "size": 12},
+        "footnote": {"font": "Times New Roman", "size": 10}}), encoding="utf-8")
+    fake.add_document(DOC_ID, "A draft for tests", ["root"], [
+        [("A quoted line", TIMES_12), (FOOTNOTE, {"footnote": "n-1"}), (" ends here.", TIMES_12)],
+        [("Another line", TIMES_12), (FOOTNOTE, {"footnote": "n-2"}), (".", TIMES_12)],
+    ], footnotes={
+        "n-1": [("Jo Bloggs, ", ARIAL_10), ("A Made-Up Book", dict(ARIAL_10, italic=True)),
+                (", p. 3.", ARIAL_10)],
+        "n-2": [("A note made by hand, ", ARIAL_11), ("in bold", dict(ARIAL_11, bold=True)),
+                (".", ARIAL_11)]})
+    fake.files[DOC_ID]["footnotes"]["n-1"][0][1] = dict(ARIAL_10)  # Google's space, in its look
+    fake.files[DOC_ID]["footnotes"]["n-2"][0][1] = dict(ARIAL_11)
+
+
+TIMES_12 = {"weightedFontFamily": {"fontFamily": "Times New Roman"}, "fontSize": dim(12)}
+ARIAL_11 = {"weightedFontFamily": {"fontFamily": "Arial"}, "fontSize": dim(11)}
+
+
+def test_the_check_reports_footnotes_not_in_the_format_and_writes_nothing(doc_format, fake):
+    with_footnotes(doc_format, fake)
+    result = doc_format()
+    assert (result.code, result.err) == (1, "")
+    assert result.out == FOOTNOTE_REPORT
+    assert fake.writes() == []
+
+
+def test_fix_dry_run_says_what_it_would_set_in_each_footnote(doc_format, fake):
+    with_footnotes(doc_format, fake)
+    result = doc_format("--fix", "--dry-run")
+    assert result.code == 1
+    assert result.out == FOOTNOTE_REPORT + (
+        "Would set:\n"
+        "  footnote 1: Jo Bloggs, A Made-Up Book, p. 3.: font Times New Roman\n"
+        "  footnote 2: A note made by hand, in bold.: font Times New Roman, size 10 pt\n"
+        "Nothing changed (--dry-run).\n")
+    assert fake.writes() == []
+
+
+def test_fix_sets_each_footnote_keeping_italic_and_bold_and_checks_again(doc_format, fake):
+    with_footnotes(doc_format, fake)
+    body = fake.paragraphs(DOC_ID)
+    result = doc_format("--fix")
+    assert (result.code, result.err) == (0, "")
+    assert result.out.endswith("After the fix:\nFormat: everything matches.\n")
+    assert fake.writes() == [CHANGE]
+    times = {"weightedFontFamily": {"fontFamily": "Times New Roman", "weight": 400},
+             "fontSize": dim(10)}
+    assert fake.footnote(DOC_ID, "n-1") == [[(" Jo Bloggs, ", times),
+                                             ("A Made-Up Book", dict(times, italic=True)),
+                                             (", p. 3.", times)]]
+    assert fake.footnote(DOC_ID, "n-2") == [[(" A note made by hand, ", times),
+                                             ("in bold", dict(times, bold=True)), (".", times)]]
+    assert fake.paragraphs(DOC_ID) == body
+    assert doc_format().out == "Format: everything matches.\n"

@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from googledocstools.doc_format import FormatError, check, parse_format, report
-from tests.conftest import Para, described
+from googledocstools.doc_format import Fix, FormatError, Problem, check, parse_format, report
+from tests.conftest import FOOTNOTE, Para, described
 
 PT = "PT"
 
@@ -261,6 +261,7 @@ def test_the_example_format_file_in_the_checkout_reads_as_it_stands():
     assert example["body"] == {"font": "Times New Roman", "size": 12, "line_spacing": 2,
                                "first_line_indent_inches": 0.5}
     assert example["heading_2"]["pattern"] == "^Chapter \\d+: "
+    assert example["footnote"] == {"font": "Times New Roman", "size": 10}
 
 
 TITLE_PAGE = [
@@ -370,3 +371,93 @@ def test_a_heading_given_its_font_and_its_bold_gets_the_bold_after_the_font():
         {"updateTextStyle": {"range": {"startIndex": start, "endIndex": end - 1},
                              "textStyle": {"bold": True}, "fields": "bold"}},
     ]
+
+
+# Footnotes (Request 09): a footnote's paragraphs are Normal text, with Google's 10 pt on the text.
+ARIAL_10 = {"weightedFontFamily": {"fontFamily": "Arial"}, "fontSize": dim(10)}
+TIMES_10 = {"weightedFontFamily": {"fontFamily": "Times New Roman"}, "fontSize": dim(10)}
+NOTES = {"footnote": {"font": "Times New Roman", "size": 10}}
+
+
+def mark(note_id):
+    return (FOOTNOTE, {"footnote": note_id})
+
+
+def noted(paragraphs, footnotes):
+    answer = described(paragraphs, footnotes=footnotes)
+    answer["namedStyles"] = NAMED
+    answer["documentStyle"] = PAGE
+    return answer
+
+
+def two_notes():
+    return noted([[("A quoted line", {}), mark("n-1"), (" ends.", {})],
+                  [("Another", {}), mark("n-2"), (".", {})]],
+                 {"n-1": [[(" Jo Bloggs, ", ARIAL_10), ("A Book", dict(ARIAL_10, italic=True)),
+                           (".", ARIAL_10)]],
+                  "n-2": [[(" A note already right.", TIMES_10)]]})
+
+
+def test_the_footnote_part_takes_the_keys_body_text_takes_and_no_others():
+    assert parse_format(json.dumps({"footnote": {"font": "Times New Roman", "size": 10,
+                                                 "line_spacing": 1,
+                                                 "first_line_indent_inches": 0}}))
+    with pytest.raises(FormatError) as refused:
+        parse_format(json.dumps({"footnote": {"bold": True, "size": 0}}))
+    assert refused.value.problems == ['footnote: unknown key "bold"',
+                                      'footnote: "size" must be a number above 0']
+
+
+def test_each_footnote_is_checked_and_fixed_in_its_own_segment_leaving_italic_alone():
+    checked = check(two_notes(), NOTES)
+    assert checked.problems == [Problem("footnote: font not Times New Roman", "footnote 1",
+                                        "Jo Bloggs, A Book.", ("n-1", 0))]
+    assert checked.fixes == [Fix("footnote 1", "Jo Bloggs, A Book.", ["font Times New Roman"], [
+        {"updateTextStyle": {"range": {"segmentId": "n-1", "startIndex": 0, "endIndex": 19},
+                             "textStyle": {"weightedFontFamily": {"fontFamily": "Times New Roman"}},
+                             "fields": "weightedFontFamily"}}])]
+
+
+def test_a_footnotes_own_bold_is_put_back_after_its_font_and_its_spacing_set():
+    found = noted([[("Text", {}), mark("n-1")]],
+                  {"n-1": [[(" See ", ARIAL_10), ("this", dict(ARIAL_10, bold=True)),
+                            (" page.", ARIAL_10)]]})
+    fixes = check(found, {"footnote": {"font": "Times New Roman", "line_spacing": 1}}).fixes
+    assert fixes[0].said == ["font Times New Roman", "line spacing 1"]
+    assert fixes[0].requests[1:] == [
+        {"updateTextStyle": {"range": {"segmentId": "n-1", "startIndex": 5, "endIndex": 9},
+                             "textStyle": {"bold": True}, "fields": "bold"}},
+        {"updateParagraphStyle": {"range": {"segmentId": "n-1", "startIndex": 0, "endIndex": 16},
+                                  "paragraphStyle": {"lineSpacing": 100}, "fields": "lineSpacing"}},
+    ]
+
+
+def test_a_format_without_the_part_checks_no_footnote_and_a_document_without_any_is_clean():
+    assert check(two_notes(), {"body": {"font": "Times New Roman"}}).problems == []
+    assert check(noted(["No notes here."], {}), NOTES).problems == []
+
+
+def test_a_footnote_marked_in_the_front_matter_is_left_out_with_it():
+    found = noted([[("Front matter", {}), mark("n-1")], Para("Chapter 1: The start", H2),
+                   [("Chapter text", {}), mark("n-2")]],
+                  {"n-1": [[(" Front note.", ARIAL_10)]], "n-2": [[(" Chapter note.", ARIAL_10)]]})
+    checked = check(found, dict(NOTES, start_at="heading_2"))
+    assert [(problem.place, problem.beginning) for problem in checked.problems] == [
+        ("footnote 2", "Chapter note.")]
+
+
+def test_the_report_counts_a_footnotes_paragraph_apart_from_the_body_paragraph_at_its_place():
+    found = noted([[("Body in Arial", ARIAL_10), mark("n-1")]],
+                  {"n-1": [[(" A note in Arial.", ARIAL_10)]]})
+    shown = report(check(found, {"body": {"font": "Times New Roman"},
+                                 "footnote": {"font": "Times New Roman"}}))
+    assert shown == ("body text: font not Times New Roman: 1 paragraph\n"
+                     "  at the start: Body in Arial\n"
+                     "footnote: font not Times New Roman: 1 paragraph\n"
+                     "  footnote 1: A note in Arial.\n"
+                     "Format: 2 problems in 2 paragraphs.\n")
+
+
+def test_an_empty_footnote_is_not_checked():
+    found = noted([[("Text", {}), mark("n-1")]], {"n-1": [[(" ", ARIAL_10)]]})
+    assert check(found, NOTES).problems == []

@@ -197,11 +197,7 @@ class FakeGoogle:
     def structured(self, file_id, mode="SUGGESTIONS_INLINE"):
         """The document read back for described(): each paragraph as paragraphs() gives it, as a
         Para where its end holds a paragraph style or a bullet."""
-        ends = [style for character, style in _viewed_runs(self.files[file_id]["characters"], mode)
-                if character == "\n"]
-        return [Para(runs or [("", {})], end.get("paragraph"), end.get("bullet"))
-                if "paragraph" in end or "bullet" in end else runs
-                for runs, end in zip(self.paragraphs(file_id, mode), ends)]
+        return _structured(self.files[file_id]["characters"], mode)
 
     def alignments(self, file_id):
         """Each paragraph's alignment, in order; None where none was ever set."""
@@ -409,7 +405,7 @@ class FakeGoogle:
         if "characters" not in entry:
             raise AssertionError("this stand-in document was not added piece by piece")
         answer = described(self.structured(doc_id, mode), entry["revision"], footnotes={
-            note_id: _as_paragraphs(held, mode)
+            note_id: _structured(held, mode)
             for note_id, held in entry.get("footnotes", {}).items()})
         answer["documentId"] = doc_id
         answer["title"] = entry["name"]
@@ -787,9 +783,18 @@ def _as_paragraphs(characters, mode):
     return paragraphs
 
 
+def _structured(characters, mode):
+    """Held characters read back for described(): each paragraph as _as_paragraphs() gives it, as
+    a Para where its end holds a paragraph style or a bullet."""
+    ends = [style for character, style in _viewed_runs(characters, mode) if character == "\n"]
+    return [Para(runs or [("", {})], end.get("paragraph"), end.get("bullet"))
+            if "paragraph" in end or "bullet" in end else runs
+            for runs, end in zip(_as_paragraphs(characters, mode), ends)]
+
+
 def _in_footnote(notes, segment, kind, wanted, mode, suggestion, number):
     """Apply a request inside a footnote, whose positions count from 0; why it is refused, if it
-    is. Only what the tools send there: text put in, and its look set."""
+    is. Only what the tools send there: text put in, its look set, and its paragraphs' style."""
     if segment not in notes:
         return "Invalid requests[%d].%s: Segment ID not found: %s" % (number, kind, segment)
     held = notes[segment]
@@ -825,6 +830,26 @@ def _in_footnote(notes, segment, kind, wanted, mode, suggestion, number):
                     style[field] = copy.deepcopy(wanted["textStyle"][field])
                 else:
                     style.pop(field, None)
+                if field == "weightedFontFamily" and field in wanted["textStyle"]:
+                    # Believed as seen in the body on 22 November 2026: the text's own bold goes.
+                    style[field].setdefault("weight", 400)
+                    style.pop("bold", None)
+        return None
+    if kind == "updateParagraphStyle":
+        first = place(wanted["range"]["startIndex"])
+        last = place(wanted["range"]["endIndex"])
+        if first is None or last is None or first >= last:
+            return "Invalid requests[%d].updateParagraphStyle: bad range" % number
+        for index in range(first, len(held)):  # every paragraph the range touches
+            if held[index][0] == "\n":
+                paragraph = held[index][1].setdefault("paragraph", {})
+                for field in wanted["fields"].split(","):
+                    if field in wanted["paragraphStyle"]:
+                        paragraph[field] = copy.deepcopy(wanted["paragraphStyle"][field])
+                    else:
+                        paragraph.pop(field, None)
+                if index >= last - 1:
+                    break
         return None
     raise AssertionError("the stand-in does not know the request %r in a footnote" % kind)
 

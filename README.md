@@ -533,13 +533,16 @@ fewer). What a paragraph has is what it sets itself, else what its named style s
 document, else Google's default (Arial 11, single spacing). A paragraph with no text, or only spaces,
 is never checked or fixed. With `"start_at": "heading_2"` in the format file, everything before the
 first heading 2 (a book's title page and contents, laid out by hand) is left alone too, and the
-report says how many paragraphs that was; the page is still checked. The check only reads.
+report says how many paragraphs that was; the page is still checked. With a `footnote` part, each
+footnote's paragraphs are checked too, in the order of their marks, a footnote marked in what
+`start_at` leaves out being left out with it. Google has no named style for footnotes: their
+paragraphs are Normal text, with Google's 10 pt set on the footnote's own text. The check only reads.
 
 With `--fix`, it sets every font, size, bold, colour, alignment, line spacing, first-line indent,
 page break, keep-with-next, page size and margin that does not match, in one change made only if the
 document is as it was when read, then reads the document and checks it again. It never changes a
-character of text, never a heading's level, and never bold or italic in body text or list items
-(the author's emphasis); a heading at the wrong level, one not matching its pattern, and text that
+character of text, never a heading's level, and never bold or italic in body text, list items or
+footnotes (the author's emphasis); a heading at the wrong level, one not matching its pattern, and text that
 looks like a heading are reported and left for a person. With `--fix --dry-run` it says what it
 would set and changes nothing.
 
@@ -551,6 +554,7 @@ The format file, every part optional (`check-doc-format.example.json` in this fo
   "page": {"size": "letter", "margins_inches": 1},
   "body": {"font": "Times New Roman", "size": 12, "line_spacing": 2, "first_line_indent_inches": 0.5},
   "list": {"font": "Times New Roman", "size": 12, "line_spacing": 2, "first_line_indent_inches": 0},
+  "footnote": {"font": "Times New Roman", "size": 10},
   "heading_2": {"font": "Times New Roman", "size": 16, "bold": true, "colour": "#000000",
                 "alignment": "centre", "page_break_before": true, "keep_with_next": true,
                 "pattern": "^Chapter \\d+: "}
@@ -562,6 +566,7 @@ The format file, every part optional (`check-doc-format.example.json` in this fo
 | `start_at` | `title` or `heading_1` to `heading_6`: check and fix nothing before the first paragraph of that kind. Not a part, a setting of the whole file. |
 | `page` | `size`: `letter`, `a4` or `[width, height]` in inches; `margins_inches`: one number for all four. |
 | `body` (normal text), `list` (list items) | `font`, `size` (points), `line_spacing` (a multiple of single: 2 is double), `first_line_indent_inches`. |
+| `footnote` | The same four, for every paragraph of every footnote, reported as `footnote N` with its first words. Without the part, footnotes are not checked. |
 | `title`, `heading_1` to `heading_6` | `font`, `size`, `bold`, `colour` (`#rrggbb`), `alignment` (`left`, `centre`, `right`, `justified`), `page_break_before`, `keep_with_next`, `pattern` (a regular expression the heading's text must match). |
 
     $ check-doc-format DOC --format book.json
@@ -703,7 +708,7 @@ No test reaches Google or the network: a stand-in (`tests/conftest.py`) answers 
 and records every call, so the tests assert exactly which calls were made and that the read-only
 commands wrote nothing; the sign-in's listener is stood in for too, and the real transport is tried
 only against a server on this machine. Every document, account, id and token in the tests is
-invented. 1053 tests, in about 14 seconds; coverage of `googledocstools/` 99% (the five statements
+invented. 1063 tests, in about 14 seconds; coverage of `googledocstools/` 99% (the five statements
 not run build the picture-and-caption requests that no command here makes yet). The stand-in also
 holds pending suggestions and answers Google's suggestions view modes, as Google's reference
 describes them. `tests/tier1/` are pure functions,
@@ -777,7 +782,9 @@ are still to come.
   counts lower than `check-manuscript`, which adds its notes.
 - `check-doc-format` reads list items' first-line indent as Google holds it, which is where a
   bullet stands; it does not read a list's own indents. It does not check headers, footers or
-  footnotes, or text inside tables against a part of its own (they are body text).
+  footnotes unless the format has a `footnote` part, or text inside tables against a part of its
+  own (they are body text). It reads suggestions inline, so a footnote still pending as a
+  suggestion is checked and fixed on its look before its suggested change.
 - `check-typography` and `edit-doc` read the document with pending suggestions inline: a
   straight quote in a suggested deletion is still listed, and `edit-doc` refuses to touch text in
   a pending suggestion.
@@ -824,6 +831,9 @@ are still to come.
   `google-docs-tools-secrets/env.sh`, which goes out of use. In a device shell, connect lobster-tools
   and `~/projects/secrets/google` in its place. The commands' help and their message for a missing
   secret say so.
+- 27 November 2026: `check-doc-format` takes a `footnote` part in the format file (`font`, `size`,
+  `line_spacing`, `first_line_indent_inches`) and checks and fixes every footnote by it; the example
+  format now has one. A format file without the part works as before.
 - 27 November 2026: new command, `insert-footnote`, which puts a footnote with the caller's text
   after given words, and `read-doc --footnotes`, which lists a document's footnotes after its body.
   `read-doc` without the flag is as before.

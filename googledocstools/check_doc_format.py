@@ -29,7 +29,7 @@ def _parser():
     parser = argparse.ArgumentParser(
         prog=COMMAND,
         description="Check a Google Doc against a house format: the page, body text, list items, "
-        "the title and each heading level, as the format file says. Reports each paragraph that "
+        "footnotes, the title and each heading level, as the format file says. Reports each paragraph that "
         "does not match, grouped by what is wrong, headings at a level the format does not "
         "name or not matching their pattern, and normal text that looks like a heading. The "
         "check only reads. With --fix, it sets the fonts, sizes, spacing, indents, alignment, "
